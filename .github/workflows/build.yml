@@ -1,0 +1,109 @@
+name: Build Helium (CPU Temperature)
+
+# 触发方式：
+#   1) push 到 main 自动构建
+#   2) 在仓库 Actions 页面点 "Run workflow" 手动触发
+#
+# 注意：macos-13 镜像已于 2025-12-04 退役不可再用，这里用 macos-15（Apple Silicon）。
+# 仓库根目录就是 Helium 源码树（Makefile/ipabuild.sh/src/layout 在此）。
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: macos-15
+    permissions:
+      contents: write # 创建 Release 需要
+
+    steps:
+      - name: Show toolchain info
+        run: |
+          xcodebuild -version || true
+          echo "iPhoneOS SDK: $(xcrun --sdk iphoneos --show-sdk-version)"
+          echo "Arch: $(uname -m)"
+
+      - name: Checkout patched Helium
+        uses: actions/checkout@v4
+
+      - name: Checkout Theos
+        uses: actions/checkout@v4
+        with:
+          repository: theos/theos
+          path: theos
+          submodules: recursive
+
+      - name: Set THEOS
+        run: echo "THEOS=$GITHUB_WORKSPACE/theos" >> $GITHUB_ENV
+
+      # Helium 依赖 BackBoardServices / GraphicsServices / IOKit / SpringBoardServices
+      # 四个私有框架，Xcode 自带 SDK 里没有，链接会报 "framework not found"。
+      # 这里从 theos/sdks 只取这四个框架的 stub（.tbd，纯文本、与 Swift 无关），
+      # 放进 private-frameworks/，再由 Makefile 的 -F 交给链接器。
+      # 只稀疏检出这几个目录，不下载整个 SDK（否则数 GB，且旧 SDK 的 SwiftUI
+      # 是 Swift 5.8 构建的，无法被 Xcode 16 的 Swift 6 使用）。
+      - name: Fetch private framework stubs
+        run: |
+          git clone --depth 1 --filter=blob:none --sparse \
+            https://github.com/theos/sdks.git sdk-stub
+          cd sdk-stub
+          git sparse-checkout set \
+            iPhoneOS16.5.sdk/System/Library/PrivateFrameworks/BackBoardServices.framework \
+            iPhoneOS16.5.sdk/System/Library/PrivateFrameworks/GraphicsServices.framework \
+            iPhoneOS16.5.sdk/System/Library/PrivateFrameworks/SpringBoardServices.framework \
+            iPhoneOS16.5.sdk/System/Library/Frameworks/IOKit.framework
+          cd ..
+          mkdir -p private-frameworks
+          cp -R sdk-stub/iPhoneOS16.5.sdk/System/Library/PrivateFrameworks/*.framework \
+                private-frameworks/ 2>/dev/null || true
+          cp -R sdk-stub/iPhoneOS16.5.sdk/System/Library/Frameworks/IOKit.framework \
+                private-frameworks/ 2>/dev/null || true
+          echo "---- private-frameworks 内容 ----"
+          ls private-frameworks
+          find private-frameworks -name "*.tbd" | sed 's/^/  /'
+
+      # 用 Xcode 自带的 iOS SDK 编译（其 SwiftUI 与本机 Swift 版本匹配）。
+      # Makefile 默认写死 16.5，与本机会话不一致会让 Theos 找不到 SDK，这里对齐。
+      - name: Align SDK version in Makefile
+        run: |
+          HOST_SDK="$(xcrun --sdk iphoneos --show-sdk-version)"
+          TARGET_SDK="$(sed -n 's/^TARGET[[:space:]]*:=[^:]*:[^:]*:\([0-9.]*\):.*/\1/p' Makefile | head -1)"
+          echo "本机 SDK = $HOST_SDK / Makefile SDK = $TARGET_SDK"
+          if [ -n "$TARGET_SDK" ] && [ "$TARGET_SDK" != "$HOST_SDK" ]; then
+            sed -i '' "s/^\(TARGET[[:space:]]*:=[^:]*:[^:]*:\)${TARGET_SDK}:/\1${HOST_SDK}:/" Makefile
+            echo "已改写为: $(grep -m1 '^TARGET' Makefile)"
+          else
+            echo "版本一致，无需改动"
+          fi
+
+      - name: Install ldid
+        run: brew install ldid
+
+      - name: Build tipa
+        run: ./ipabuild.sh
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Helium-CPUTemperature.tipa
+          path: build/Helium.tipa
+          if-no-files-found: error
+
+      # 发布到 Release：公开仓库的安装包可直接下载，无需登录、无鉴权。
+      - name: Publish Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: cputemp-${{ github.run_number }}
+          name: Helium 3.2.6 + CPU温度 (build ${{ github.run_number }})
+          body: |
+            在 Helium 3.2.6 基础上新增「CPU温度」状态栏部件。
+
+            安装：把 Helium.tipa 改名为 .ipa（或直接用 tipa），用 TrollStore / 巨魔安装。
+            使用：Helium → Customize → 添加部件 → 选择「CPU温度」。
+
+            说明：若显示 ??ºC，表示该机型读不到 CPU die 温度通道，属预期降级行为。
+          files: build/Helium.tipa
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

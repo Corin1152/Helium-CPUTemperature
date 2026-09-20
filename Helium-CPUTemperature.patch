@@ -1,0 +1,361 @@
+diff --git a/src.orig/layout/Applications/Helium.app/en.lproj/Localizable.strings b/src/layout/Applications/Helium.app/en.lproj/Localizable.strings
+index a9d892e..f1c2243 100644
+--- a/src.orig/layout/Applications/Helium.app/en.lproj/Localizable.strings
++++ b/src/layout/Applications/Helium.app/en.lproj/Localizable.strings
+@@ -173,6 +173,7 @@
+ "Battery Capacity" = "Battery Capacity";
+ "Charging Symbol" = "Charging Symbol";
+ "Weather" = "Weather";
++"CPU Temperature" = "CPU Temperature";
+ 
+ /* WeatherUtils.mm */
+ "error" = "error";
+\ No newline at end of file
+diff --git a/src.orig/layout/Applications/Helium.app/zh-Hans.lproj/Localizable.strings b/src/layout/Applications/Helium.app/zh-Hans.lproj/Localizable.strings
+index b64b1f9..53f656c 100644
+--- a/src.orig/layout/Applications/Helium.app/zh-Hans.lproj/Localizable.strings
++++ b/src/layout/Applications/Helium.app/zh-Hans.lproj/Localizable.strings
+@@ -177,6 +177,7 @@
+ "Battery Capacity" = "电池容量";
+ "Charging Symbol" = "充电符号";
+ "Weather" = "天气";
++"CPU Temperature" = "CPU温度";
+ 
+ /* WeatherUtils.mm */
+ "error" = "出错啦";
+\ No newline at end of file
+diff --git a/src.orig/src/controllers/WidgetManager.swift b/src/src/controllers/WidgetManager.swift
+index 03bb144..5c5c3c8 100644
+--- a/src.orig/src/controllers/WidgetManager.swift
++++ b/src/src/controllers/WidgetManager.swift
+@@ -11,16 +11,19 @@ import SwiftUI
+ enum WidgetModule: Int, CaseIterable {
+     case dateWidget = 1
+     case timeWidget = 5
+-    
++
+     case network = 2
+-    
++
+     case battery = 4
+     case currentCapacity = 7
+     case chargeSymbol = 8
+     case temperature = 3
+-    
++
+     case textWidget = 6
+     case weather = 9
++
++    // CPU/SoC die temperature, read through IOReport (see WidgetManager.mm)
++    case cpuTemperature = 10
+ }
+ 
+ struct WidgetIDStruct: Identifiable, Equatable {
+@@ -458,6 +461,8 @@ class WidgetDetails {
+             return (NSLocalizedString("Charging Symbol", comment: ""), "⚡️")
+         case .weather:
+             return (NSLocalizedString("Weather", comment: ""), "🌤 20℃")
++        case .cpuTemperature:
++            return (NSLocalizedString("CPU Temperature", comment: ""), "42.50ºC")
+         }
+     }
+     
+diff --git a/src.orig/src/views/widget/WidgetPreferencesView.swift b/src/src/views/widget/WidgetPreferencesView.swift
+index 950533f..b79a4f3 100644
+--- a/src.orig/src/views/widget/WidgetPreferencesView.swift
++++ b/src/src/views/widget/WidgetPreferencesView.swift
+@@ -147,6 +147,24 @@ struct WidgetPreferencesView: View {
+                             }
+                         }
+                 }
++            case .cpuTemperature:
++                // MARK: CPU Temperature Value
++                HStack {
++                    Text(NSLocalizedString("Temperature Unit", comment:"")).foregroundColor(.primary).bold()
++                    Spacer()
++                    Picker(selection: $intSelection) {
++                        Text(NSLocalizedString("Celcius", comment:"")).tag(0)
++                        Text(NSLocalizedString("Fahrenheit", comment:"")).tag(1)
++                    } label: {}
++                        .pickerStyle(.menu)
++                        .onAppear {
++                            if widgetID.config["useFahrenheit"] as? Bool ?? false == true {
++                                intSelection = 1
++                            } else {
++                                intSelection = 0
++                            }
++                        }
++                }
+             case .battery:
+                 // MARK: Battery Value Type
+                 HStack {
+@@ -363,6 +381,9 @@ struct WidgetPreferencesView: View {
+         case .temperature:
+             // MARK: Temperature Unit Handling
+             widgetStruct.config["useFahrenheit"] = intSelection == 1 ? true : false
++        case .cpuTemperature:
++            // MARK: CPU Temperature Unit Handling
++            widgetStruct.config["useFahrenheit"] = intSelection == 1 ? true : false
+         case .battery:
+             // MARK: Battery Value Type Handling
+             widgetStruct.config["batteryValueType"] = intSelection
+diff --git a/src.orig/src/views/widget/WidgetPreviewsView.swift b/src/src/views/widget/WidgetPreviewsView.swift
+index 9f79fd0..9aba1ee 100644
+--- a/src.orig/src/views/widget/WidgetPreviewsView.swift
++++ b/src/src/views/widget/WidgetPreviewsView.swift
+@@ -71,6 +71,8 @@ struct WidgetPreviewsView: View {
+             text = "\(isUp ? (speedIcon == 0 ? "▲" : "↑") : (speedIcon == 0 ? "▼" : "↓")) 30 KB/s"
+         case .temperature:
+             text = widget.config["useFahrenheit"] as? Bool ?? false ? "78.84ºF" : "26.02ºC"
++        case .cpuTemperature:
++            text = widget.config["useFahrenheit"] as? Bool ?? false ? "108.50ºF" : "42.50ºC"
+         case .battery:
+             let batteryValue: Int = widget.config["batteryValueType"] as? Int ?? 0
+             switch (batteryValue) {
+diff --git a/src.orig/src/widgets/WidgetManager.mm b/src/src/widgets/WidgetManager.mm
+index 4872e7d..16066d6 100644
+--- a/src.orig/src/widgets/WidgetManager.mm
++++ b/src/src/widgets/WidgetManager.mm
+@@ -207,6 +207,221 @@ static NSString* formattedTemp(BOOL useFahrenheit)
+     return @"??ºC";
+ }
+ 
++#pragma mark - CPU Temp Widget (IOReport)
++/*
++ CPU/SoC die temperature is not exposed by any public API. It is published on the
++ IOReport "CPU Die Temperature" channel group instead. IOReport lives inside
++ IOKit.framework but its symbols are private, so they are resolved at runtime with
++ dlopen/dlsym: if anything is unavailable the widget degrades to "??" instead of
++ crashing the HUD.
++
++ Entitlements required: com.apple.private.security.no-sandbox (already present in
++ ent.plist). Without it IOReport returns nothing on jailed devices.
++ */
++#import <dlfcn.h>
++#import <math.h>
++
++typedef void *IORepSubRef;
++typedef CFMutableDictionaryRef (*fn_IOReportCopyChannelsInGroup)(CFStringRef, CFStringRef, uint64_t, uint64_t, uint64_t);
++typedef CFMutableDictionaryRef (*fn_IOReportCopyAllChannels)(uint64_t, uint64_t);
++typedef IORepSubRef (*fn_IOReportCreateSubscription)(void *, CFMutableDictionaryRef, CFMutableDictionaryRef *, uint64_t, CFTypeRef);
++typedef CFDictionaryRef (*fn_IOReportCreateSamples)(IORepSubRef, CFMutableDictionaryRef, CFTypeRef);
++typedef long (*fn_IOReportSimpleGetIntegerValue)(CFDictionaryRef, int);
++
++static void *ioReportHandle = NULL;
++static BOOL ioReportResolved = NO;
++static fn_IOReportCopyChannelsInGroup pCopyChannelsInGroup = NULL;
++static fn_IOReportCopyAllChannels pCopyAllChannels = NULL;
++static fn_IOReportCreateSubscription pCreateSubscription = NULL;
++static fn_IOReportCreateSamples pCreateSamples = NULL;
++static fn_IOReportSimpleGetIntegerValue pSimpleGetIntegerValue = NULL;
++
++static IORepSubRef cpuTempSubscription = NULL;
++static CFMutableDictionaryRef cpuTempChannels = NULL;
++static BOOL cpuTempSetupFailed = NO;
++static int cpuTempRetryCountdown = 0;
++
++static BOOL ensureIOReportSymbols(void)
++{
++    if (ioReportResolved) {
++        return (pCreateSamples != NULL && pSimpleGetIntegerValue != NULL);
++    }
++    ioReportResolved = YES;
++    ioReportHandle = dlopen("/System/Library/Frameworks/IOKit.framework/IOKit", RTLD_NOW);
++    if (!ioReportHandle) {
++        // IOKit is linked privately by the Makefile, so the symbols may already be
++        // in the default namespace.
++        ioReportHandle = RTLD_DEFAULT;
++    }
++    pCopyChannelsInGroup = (fn_IOReportCopyChannelsInGroup)dlsym(ioReportHandle, "IOReportCopyChannelsInGroup");
++    pCopyAllChannels = (fn_IOReportCopyAllChannels)dlsym(ioReportHandle, "IOReportCopyAllChannels");
++    pCreateSubscription = (fn_IOReportCreateSubscription)dlsym(ioReportHandle, "IOReportCreateSubscription");
++    pCreateSamples = (fn_IOReportCreateSamples)dlsym(ioReportHandle, "IOReportCreateSamples");
++    pSimpleGetIntegerValue = (fn_IOReportSimpleGetIntegerValue)dlsym(ioReportHandle, "IOReportSimpleGetIntegerValue");
++    return (pCreateSamples != NULL && pSimpleGetIntegerValue != NULL);
++}
++
++// Collect the channel group that carries a die temperature. The group name differs
++// between SoCs and OS versions, so try the known names first, then fall back to a
++// full channel dump.
++static CFMutableDictionaryRef copyTemperatureChannels(void)
++{
++    if (!ensureIOReportSymbols()) return NULL;
++
++    if (pCopyChannelsInGroup) {
++        CFStringRef groups[] = {
++            CFSTR("CPU Die Temperature"),
++            CFSTR("SoC Die Temperature"),
++            CFSTR("GPU Die Temperature"),
++            CFSTR("Thermal")
++        };
++        for (int i = 0; i < 4; i++) {
++            CFMutableDictionaryRef ch = pCopyChannelsInGroup(groups[i], NULL, 0, 0, 0);
++            if (ch) {
++                if (CFDictionaryGetCount(ch) > 0) return ch;
++                CFRelease(ch);
++            }
++        }
++    }
++
++    if (pCopyAllChannels) {
++        CFMutableDictionaryRef all = pCopyAllChannels(0, 0);
++        if (all) {
++            if (CFDictionaryGetCount(all) > 0) return all;
++            CFRelease(all);
++        }
++    }
++    return NULL;
++}
++
++// Walk the nested sample dictionary (group -> sub group -> channel) and pull the
++// first die-temperature channel we can find.
++static BOOL findTemperatureInSamples(CFDictionaryRef node, long *outRaw)
++{
++    if (!node || CFGetTypeID(node) != CFDictionaryGetTypeID()) return NO;
++    if (!pSimpleGetIntegerValue) return NO;
++
++    CFIndex count = CFDictionaryGetCount(node);
++    if (count <= 0) return NO;
++
++    CFTypeRef *keys = (CFTypeRef *)malloc(sizeof(CFTypeRef) * (size_t)count);
++    CFTypeRef *vals = (CFTypeRef *)malloc(sizeof(CFTypeRef) * (size_t)count);
++    if (!keys || !vals) {
++        free(keys);
++        free(vals);
++        return NO;
++    }
++    CFDictionaryGetKeysAndValues(node, keys, vals);
++
++    BOOL found = NO;
++    for (CFIndex i = 0; i < count && !found; i++) {
++        CFTypeRef key = keys[i];
++        CFTypeRef val = vals[i];
++
++        BOOL matches = NO;
++        if (key && CFGetTypeID(key) == CFStringGetTypeID()) {
++            NSString *name = (__bridge NSString *)key;
++            NSString *upper = [name uppercaseString];
++            if ([upper rangeOfString:@"TEMPERATURE"].location != NSNotFound &&
++                ([upper rangeOfString:@"CPU"].location != NSNotFound ||
++                 [upper rangeOfString:@"SOC"].location != NSNotFound ||
++                 [upper rangeOfString:@"DIE"].location != NSNotFound ||
++                 [upper rangeOfString:@"GPU"].location != NSNotFound)) {
++                matches = YES;
++            }
++        }
++
++        if (matches && val && CFGetTypeID(val) == CFDictionaryGetTypeID()) {
++            long v = pSimpleGetIntegerValue((CFDictionaryRef)val, 0);
++            if (v != 0) {
++                *outRaw = v;
++                found = YES;
++                break;
++            }
++        }
++
++        if (!found && val && CFGetTypeID(val) == CFDictionaryGetTypeID()) {
++            found = findTemperatureInSamples((CFDictionaryRef)val, outRaw);
++        }
++    }
++
++    free(keys);
++    free(vals);
++    return found;
++}
++
++// IOReport publishes temperatures in different scales depending on the channel:
++// plain Celsius, decidegrees (1/10 C) or centidegrees (1/100 C). Pick the scale
++// that lands inside a plausible range for a phone SoC.
++static double normalizeTemperature(long raw)
++{
++    double d = (double)raw;
++    if (d >= -50.0 && d <= 150.0) return d;
++    if (d / 10.0 >= -50.0 && d / 10.0 <= 150.0) return d / 10.0;
++    if (d / 100.0 >= -50.0 && d / 100.0 <= 150.0) return d / 100.0;
++    return NAN;
++}
++
++// Returns the CPU/SoC die temperature in Celsius, or NAN when unavailable.
++static double getCPUDieTemperature(void)
++{
++    // After a failed setup, retry every 30 refreshes rather than hammering
++    // IOReport on every HUD tick.
++    if (cpuTempSetupFailed && cpuTempRetryCountdown > 0) {
++        cpuTempRetryCountdown--;
++        return NAN;
++    }
++    if (!ensureIOReportSymbols()) return NAN;
++
++    if (!cpuTempChannels) {
++        cpuTempChannels = copyTemperatureChannels();
++        if (!cpuTempChannels) {
++            cpuTempSetupFailed = YES;
++            cpuTempRetryCountdown = 30;
++            return NAN;
++        }
++    }
++    if (!cpuTempSubscription) {
++        if (!pCreateSubscription) return NAN;
++        CFMutableDictionaryRef subbed = NULL;
++        cpuTempSubscription = pCreateSubscription(NULL, cpuTempChannels, &subbed, 0, NULL);
++        if (subbed) {
++            // Only the channels actually subscribed to can be sampled.
++            CFRelease(cpuTempChannels);
++            cpuTempChannels = subbed;
++        }
++        if (!cpuTempSubscription) {
++            cpuTempSetupFailed = YES;
++            cpuTempRetryCountdown = 30;
++            return NAN;
++        }
++    }
++
++    CFDictionaryRef samples = pCreateSamples(cpuTempSubscription, cpuTempChannels, NULL);
++    if (!samples) return NAN;
++
++    long raw = 0;
++    BOOL ok = findTemperatureInSamples(samples, &raw);
++    CFRelease(samples);
++    if (!ok) return NAN;
++
++    cpuTempSetupFailed = NO;
++    return normalizeTemperature(raw);
++}
++
++static NSString* formattedCPUTemp(BOOL useFahrenheit)
++{
++    double temp = getCPUDieTemperature();
++    if (isnan(temp)) {
++        return useFahrenheit ? @"??ºF" : @"??ºC";
++    }
++    if (useFahrenheit) {
++        temp = (temp * 9.0/5.0) + 32.0;
++        return [NSString stringWithFormat: @"%.2fºF", temp];
++    }
++    return [NSString stringWithFormat: @"%.2fºC", temp];
++}
++
+ #pragma mark - Battery Widget
+ /*
+  Battery Widget Identifiers:
+@@ -295,6 +510,7 @@ static NSString* formattedChargingSymbol(BOOL filled)
+  7 = Battery Percentage
+  8 = Charging Symbol
+  9 = Weather
++ 10 = CPU Temp (SoC die temperature via IOReport)
+ 
+  TODO:
+  - Music Visualizer
+@@ -374,6 +590,12 @@ void formatParsedInfo(NSDictionary *parsedInfo, NSInteger parsedID, NSMutableAtt
+                 widgetString = [WeatherUtils formatTodayResult:today format:widgetString];
+             }
+             break;
++        case 10:
++            // CPU Temp
++            widgetString = formattedCPUTemp(
++                [parsedInfo valueForKey:@"useFahrenheit"] ? [[parsedInfo valueForKey:@"useFahrenheit"] boolValue] : NO
++            );
++            break;
+         default:
+             // do not add anything
+             break;
