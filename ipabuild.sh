@@ -23,8 +23,8 @@ if [ ! -d "build" ]; then
     mkdir build
 fi
 #remove existing archive if there
-if [ -d "build/Helium.tipa" ]; then
-    rm -rf "build/Helium.tipa"
+if [ -d "build/Helium-C.ipa" ]; then
+    rm -rf "build/Helium-C.ipa"
 fi
 
 if ! type "gmake" >/dev/null; then
@@ -66,7 +66,7 @@ if [ -d $BUILD_LOCATION ]; then
     if [[ $* != *--debug* ]]; then
         strip Payload/Helium.app/Helium
     fi
-    zip -vr Helium.tipa Payload
+    zip -vr Helium-C.ipa Payload
     rm -rf Helium.app
     rm -rf Payload
 fi

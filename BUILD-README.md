@@ -5,6 +5,9 @@
 一份**已经改好代码的完整 Helium 源码**，在原有基础上新增了三个状态栏悬浮部件：
 「CPU温度」（编号 10）、「CPU占用」（编号 11）、「CPU频率」（编号 12）。
 
+版本：显示版本 `3.2.6-01`（`CFBundleShortVersionString`），构建号 `3.2.6`（`CFBundleVersion`）。
+产物：`Helium-C.ipa`。
+
 ## 追加（2026-09-29）：CPU占用 / CPU频率
 
 ### 部件一览
@@ -109,7 +112,7 @@ chmod +x build.sh
 ```
 
 全程自动：校验环境 → 装载内置 Theos → 匹配本机 iOS SDK → 部署内置 ldid → 编译 → 产出安装包。约 5-15 分钟。
-跑完会在当前目录得到 `Helium-CPUTemperature.ipa`。
+跑完会在当前目录得到 `Helium-C.ipa`。
 
 > 首次运行若弹出「ldid 来自身份不明的开发者」被系统拦截，到
 > **系统设置 → 隐私与安全性** 点「仍要允许」，然后重跑一次即可。
@@ -135,7 +138,7 @@ chmod +x build.sh
 
 ## 安装与使用
 
-1. 把 `Helium-CPUTemperature.ipa` 传到 iPhone（隔空投送 / 微信 / 数据线均可）
+1. 把 `Helium-C.ipa` 传到 iPhone（隔空投送 / 微信 / 数据线均可）
 2. 在 iPhone 上用「文件」或微信打开，选择 **TrollStore（巨魔）** 安装
 3. 打开 Helium → **Customize** → 添加部件 → 列表里会出现「**CPU温度**」
 4. 点进该部件可设置温度单位（摄氏 / 华氏），与现有温度部件用法一致

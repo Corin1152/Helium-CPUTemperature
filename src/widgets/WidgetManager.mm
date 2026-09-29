@@ -951,7 +951,9 @@ static BOOL copyCPUTicks(uint64_t **outTicks, natural_t *outCount)
     }
 
     const natural_t states = CPU_STATE_MAX;
-    uint64_t *ticks = malloc(sizeof(uint64_t) * cpuCount * states);
+    // Casts are needed because this file is Objective-C++: in C a void* converts
+    // implicitly, in C++ it does not.
+    uint64_t *ticks = (uint64_t *)malloc(sizeof(uint64_t) * cpuCount * states);
     if (ticks != NULL) {
         for (natural_t core = 0; core < cpuCount; core++) {
             for (natural_t state = 0; state < states; state++) {
@@ -1006,7 +1008,7 @@ static BOOL cpuBusyFractions(double **outFractions, natural_t *outCount)
     }
 
     const natural_t states = CPU_STATE_MAX;
-    double *fractions = malloc(sizeof(double) * count);
+    double *fractions = (double *)malloc(sizeof(double) * count);
     if (fractions == NULL) {
         free(ticks);
         gCPUFractionsStamp = now;
