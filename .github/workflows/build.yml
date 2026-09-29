@@ -81,8 +81,11 @@ jobs:
       - name: Install ldid
         run: brew install ldid
 
+      # 用 `bash` 调用而不是 `./`：Git Data API 推送不保留可执行位，
+      # `./ipabuild.sh` 会直接 Permission denied。仓库里那一位已经补回 100755，
+      # 但调用方式不依赖它更稳。
       - name: Build tipa
-        run: ./ipabuild.sh
+        run: bash ipabuild.sh
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
