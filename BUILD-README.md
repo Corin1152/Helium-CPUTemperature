@@ -5,12 +5,13 @@
 一份**已经改好代码的完整 Helium 源码**，在原有基础上新增了四个状态栏悬浮部件：
 「CPU温度」（编号 10）、「CPU占用」（编号 11）、「CPU频率」（编号 12）、「蜂窝信号」（编号 13）。
 
-版本：显示版本 **`0.01`**（`CFBundleShortVersionString`），构建号 `0.0.1`（`CFBundleVersion`）。
+版本：显示版本 **`0.02`**（`CFBundleShortVersionString`），构建号 `0.0.2`（`CFBundleVersion`）。
 **应用名改为 `Statusbar`**（`CFBundleDisplayName` / `CFBundleName`），首页标题同步。
 
 界面：只有**两页** —— 首页与自定义；**设置入口在首页右上角的齿轮**（sheet 弹出，不再是独立分页）。
+那一页现在叫**「关于」**，只保留版本号与致谢，右上角一个「关闭」按钮直接退回首页（诊断、偏好设置、调试分组已移除）。
 致谢页底部注明「基于 Helium 改版」（GPL-3.0 要求）。
-产物：`Helium-C.ipa`。
+产物：**`Statusbar.ipa`**。
 
 ## 追加（2026-09-29）：蜂窝信号（RSRP）
 
@@ -185,7 +186,7 @@ chmod +x build.sh
 ```
 
 全程自动：校验环境 → 装载内置 Theos → 匹配本机 iOS SDK → 部署内置 ldid → 编译 → 产出安装包。约 5-15 分钟。
-跑完会在当前目录得到 `Helium-C.ipa`。
+跑完会在当前目录得到 `Statusbar.ipa`。
 
 > 首次运行若弹出「ldid 来自身份不明的开发者」被系统拦截，到
 > **系统设置 → 隐私与安全性** 点「仍要允许」，然后重跑一次即可。
@@ -211,7 +212,7 @@ chmod +x build.sh
 
 ## 安装与使用
 
-1. 把 `Helium-C.ipa` 传到 iPhone（隔空投送 / 微信 / 数据线均可）
+1. 把 `Statusbar.ipa` 传到 iPhone（隔空投送 / 微信 / 数据线均可）
 2. 在 iPhone 上用「文件」或微信打开，选择 **TrollStore（巨魔）** 安装
 3. 打开 Helium → **Customize** → 添加部件 → 列表里会出现「**CPU温度**」
 4. 点进该部件可设置温度单位（摄氏 / 华氏），与现有温度部件用法一致

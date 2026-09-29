@@ -170,6 +170,8 @@
 
 /* UIApplicationViews.swift */
 "Home" = "Home";
+"About" = "About";
+"Close" = "Close";
 "Settings" = "Settings";
 "Info" = "Info";
 "Make sure you enable developer mode before using! This will not work otherwise." = "Make sure you enable developer mode before using! This will not work otherwise.";

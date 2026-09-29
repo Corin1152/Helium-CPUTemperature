@@ -90,8 +90,8 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Helium-C.ipa
-          path: build/Helium-C.ipa
+          name: Statusbar.ipa
+          path: build/Statusbar.ipa
           if-no-files-found: error
 
       # 发布到 Release：公开仓库的安装包可直接下载，无需登录、无鉴权。
@@ -99,14 +99,14 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: statusbar-${{ github.run_number }}
-          name: Statusbar 0.01 (build ${{ github.run_number }})
+          name: Statusbar 0.02 (build ${{ github.run_number }})
           body: |
-            基于 Helium 改版。应用名改为 Statusbar，版本从 0.01 起。
+            基于 Helium 改版。应用名改为 Statusbar，版本从 0.01 起（本次 0.02）。
 
             界面：只有「首页 / 自定义」两页，设置入口在首页右上角的齿轮。
             部件：原有 9 个 + CPU温度 / CPU占用 / CPU频率 / 蜂窝信号（RSRP）。
 
-            安装：用 TrollStore / 巨魔安装 Helium-C.ipa。
+            安装：用 TrollStore / 巨魔安装 Statusbar.ipa。
             使用：Statusbar → Customize → 添加部件。
 
             说明：
@@ -116,6 +116,6 @@ jobs:
                 「不可用」说明 CommCenter 权限没生效，不是没有信号。
 
             基于 Helium（作者 LeminLimez，GPL-3.0）改版，本构建同样遵循 GPL-3.0。
-          files: build/Helium-C.ipa
+          files: build/Statusbar.ipa
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
