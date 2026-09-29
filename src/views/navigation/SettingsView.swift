@@ -15,6 +15,13 @@ let USER_DEFAULTS_PATH = "/var/mobile/Library/Preferences/com.leemin.helium.plis
 // MARK: Settings View
 // TODO: This
 struct SettingsView: View {
+    /// 设置现在是从首页右上角的齿轮以 sheet 形式弹出，所以需要一个关闭入口。
+    ///
+    /// 用 `presentationMode` 而不是 `@Environment(\.dismiss)`：后者是 iOS 15 才有的，
+    /// 而本工程的最低目标是 14.0（Makefile 的 `TARGET := ...:14.0`）。
+    /// 仓库里其它地方（`WeatherLocationView`）用的也是这个。
+    @Environment(\.presentationMode) var presentationMode
+
     // Debug Variables
     @State var sideWidgetSize: Int = 100
     @State var centerWidgetSize: Int = 100
@@ -93,7 +100,7 @@ struct SettingsView: View {
                     }
                     
                     HStack {
-                        Text(NSLocalizedString("Helium Data", comment:""))
+                        Text(NSLocalizedString("Statusbar Data", comment:""))
                             .bold()
                         Spacer()
                         Button(action: {
@@ -147,10 +154,20 @@ struct SettingsView: View {
                     LinkCell(imageName: "bomberfish", url: "https://github.com/BomberFish", title: "BomberFish", contribution: NSLocalizedString("UI improvements", comment: "BomberFish's contribution"), imageInBundle: true, circle: true)
                 } header: {
                     Label(NSLocalizedString("Credits", comment:""), systemImage: "wrench.and.screwdriver")
+                } footer: {
+                    // 这一句是必须的，不是客套：Helium 是 GPL-3.0，改版再分发必须说明来源。
+                    Text(NSLocalizedString("Statusbar is a modified build of Helium. The widget engine, the HUD and the original widgets are LeminLimez's work; the CPU and cellular-signal widgets were added in this build. Helium is licensed under the GNU GPL v3, and so is this build.", comment: ""))
                 }
             }
             .toolbar {
-                HStack {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button(action: {
+                        presentationMode.wrappedValue.dismiss()
+                    }) {
+                        Text(NSLocalizedString("Done", comment:""))
+                    }
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
                     Button(action: {
                         saveChanges()
                     }) {

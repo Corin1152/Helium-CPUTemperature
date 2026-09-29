@@ -13,7 +13,6 @@
 "Stopped." = "已停止";
 "Disable HUD" = "关闭 HUD";
 "Enable HUD" = "启用 HUD";
-"Helium" = "氦气";
 "Closing HUD" = "正在关闭 HUD";
 "Opening HUD" = "正在打开 HUD";
 "Status: Running" = "状态: 运行中";
@@ -30,7 +29,7 @@
 "Hide Save Confirmation Popup" = "不显示保存确认弹窗";
 "Display Debug Border" = "显示调试边框";
 "Use Adaptive Colors" = "使用自适应颜色";
-"Helium Data" = "氦气数据";
+"Statusbar Data" = "Statusbar 数据";
 "Successfully deleted user data!" = "已成功删除用户数据！";
 "Please restart the app to continue." = "请重启应用以继续";
 "Failed to delete user data!" = "删除用户数据失败！";
@@ -45,6 +44,9 @@
 "Modder" = "修改者";
 "TrollSpeed & Assistive Touch Logic" = "TrollSpeed & Assistive Touch 逻辑";
 "UI improvements" = "UI优化";
+"Statusbar" = "Statusbar";
+"Done" = "完成";
+"Statusbar is a modified build of Helium. The widget engine, the HUD and the original widgets are LeminLimez's work; the CPU and cellular-signal widgets were added in this build. Helium is licensed under the GNU GPL v3, and so is this build." = "Statusbar 是基于 Helium 改版的构建。部件引擎、HUD 与原有部件均为 LeminLimez 的作品；CPU 与蜂窝信号部件为本次新增。Helium 以 GNU GPL v3 授权，本构建同样遵循该协议。";
 "Credits" = "致谢";
 "Settings saved successfully" = "设置保存成功";
 

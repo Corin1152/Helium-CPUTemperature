@@ -14,6 +14,12 @@ struct HomePageView: View {
   @State private var buttonDisabled: Bool = false
   @State private var inProgress = false
 
+  /// 设置面板。
+  ///
+  /// 以前设置是第三个分页；现在只有「首页 / 自定义」两页，入口挪到首页右上角的齿轮。
+  /// 这样底栏少一个图标，而设置本来也不是一个「页」—— 它是一个模态。
+  @State private var showingSettings = false
+
   var body: some View {
     NavigationView {
       VStack(spacing: 10) {
@@ -93,9 +99,20 @@ struct HomePageView: View {
           #endif
         }
       })
-      .navigationTitle(Text(NSLocalizedString("Helium", comment: "")))
+      .navigationTitle(Text(NSLocalizedString("Statusbar", comment: "")))
+      .toolbar {
+        ToolbarItem(placement: .navigationBarTrailing) {
+          Button {
+            showingSettings = true
+          } label: {
+            Image(systemName: "gear")
+          }
+          .accessibilityLabel(Text(NSLocalizedString("Settings", comment: "")))
+        }
+      }
     }
     .navigationViewStyle(StackNavigationViewStyle())
+    .sheet(isPresented: $showingSettings) { SettingsView() }
     .animation(.timingCurve(0.25, 0.1, 0.35, 1.75).speed(1.2), value: isNowEnabled)
     .animation(.timingCurve(0.25, 0.1, 0.35, 1.75).speed(1.2), value: inProgress)
   }

@@ -12,22 +12,16 @@ import SwiftUI
 struct RootView: View {
     var body: some View {
         TabView {
-            // Home Page
+            // Home Page — 设置入口在这页的右上角，不再单独占一个分页。
             HomePageView()
                 .tabItem {
                     Label(NSLocalizedString("Home", comment: ""), systemImage: "house")
                 }
-            
+
             // Widget Customization
             WidgetCustomizationView()
                 .tabItem {
                     Label(NSLocalizedString("Customize", comment: ""), systemImage: "paintbrush")
-                }
-            
-            // Settings
-            SettingsView()
-                .tabItem {
-                    Label(NSLocalizedString("Settings", comment: ""), systemImage: "gear")
                 }
         }
         .onAppear {

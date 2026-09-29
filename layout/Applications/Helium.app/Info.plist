@@ -7,11 +7,11 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>Helium</string>
+	<string>Statusbar</string>
 	<key>CFBundleDisplayName</key>
-	<string>Helium</string>
+	<string>Statusbar</string>
 	<key>CFBundleVersion</key>
-	<string>3.2.7</string>
+	<string>0.0.1</string>
 	<key>CFBundleExecutable</key>
 	<string>Helium</string>
 	<key>NSPrincipalClass</key>
@@ -66,6 +66,6 @@
 	<key>NSHumanReadableCopyright</key>
 	<string>Copyright © 2009 Apple Inc. All Rights Reserved.</string>
 	<key>CFBundleShortVersionString</key>
-	<string>3.2.6-02</string>
+	<string>0.01</string>
 </dict>
 </plist>

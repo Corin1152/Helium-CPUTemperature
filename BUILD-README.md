@@ -1,11 +1,15 @@
-# Helium — 新增「CPU温度」「CPU占用」「CPU频率」「蜂窝信号」部件
+# Statusbar — 基于 Helium 改版（新增「CPU温度」「CPU占用」「CPU频率」「蜂窝信号」部件）
 
 ## 这是什么
 
 一份**已经改好代码的完整 Helium 源码**，在原有基础上新增了四个状态栏悬浮部件：
 「CPU温度」（编号 10）、「CPU占用」（编号 11）、「CPU频率」（编号 12）、「蜂窝信号」（编号 13）。
 
-版本：显示版本 `3.2.6-02`（`CFBundleShortVersionString`），构建号 `3.2.7`（`CFBundleVersion`）。
+版本：显示版本 **`0.01`**（`CFBundleShortVersionString`），构建号 `0.0.1`（`CFBundleVersion`）。
+**应用名改为 `Statusbar`**（`CFBundleDisplayName` / `CFBundleName`），首页标题同步。
+
+界面：只有**两页** —— 首页与自定义；**设置入口在首页右上角的齿轮**（sheet 弹出，不再是独立分页）。
+致谢页底部注明「基于 Helium 改版」（GPL-3.0 要求）。
 产物：`Helium-C.ipa`。
 
 ## 追加（2026-09-29）：蜂窝信号（RSRP）

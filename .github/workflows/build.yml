@@ -98,17 +98,24 @@ jobs:
       - name: Publish Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: cputemp-${{ github.run_number }}
-          name: Helium 3.2.6-01 + CPU温度/占用/频率 (build ${{ github.run_number }})
+          tag_name: statusbar-${{ github.run_number }}
+          name: Statusbar 0.01 (build ${{ github.run_number }})
           body: |
-            在 Helium 3.2.6 基础上新增三个状态栏部件：CPU温度、CPU占用、CPU频率。
+            基于 Helium 改版。应用名改为 Statusbar，版本从 0.01 起。
+
+            界面：只有「首页 / 自定义」两页，设置入口在首页右上角的齿轮。
+            部件：原有 9 个 + CPU温度 / CPU占用 / CPU频率 / 蜂窝信号（RSRP）。
 
             安装：用 TrollStore / 巨魔安装 Helium-C.ipa。
-            使用：Helium → Customize → 添加部件 → 选择「CPU温度」/「CPU占用」/「CPU频率」。
+            使用：Statusbar → Customize → 添加部件。
 
             说明：
               · 温度显示 ??ºC 表示该机型读不到 CPU die 温度通道，属预期降级。
-              · 占用率与频率显示 -- 表示还没有采到样（频率每 3 秒实测一次，首次重绘会先显示 --）。
+              · 占用率与频率显示 -- 表示还没有采到样（频率每 3 秒实测一次）。
+              · 蜂窝信号显示 -- 时，进该部件的设置页看「状态」一行：
+                「不可用」说明 CommCenter 权限没生效，不是没有信号。
+
+            基于 Helium（作者 LeminLimez，GPL-3.0）改版，本构建同样遵循 GPL-3.0。
           files: build/Helium-C.ipa
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
