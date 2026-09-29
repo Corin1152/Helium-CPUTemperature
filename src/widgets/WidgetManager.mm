@@ -890,6 +890,267 @@ static NSString* formattedCPUTemp(BOOL useFahrenheit)
     return [NSString stringWithFormat: @"%.2fºC", temp];
 }
 
+#pragma mark - CPU Usage / CPU Frequency Widgets
+
+/*
+ Both widgets report a number the kernel does not simply hand over, and both are
+ built the same way: keep the state in a file-scope static, and make the formatter
+ itself do as little work as possible.
+
+   * CPU load is not a figure the kernel keeps for us. host_processor_info()
+     returns *cumulative tick counters* per core, so a percentage only exists as
+     the difference between two samples. Helium redraws on a timer and the
+     formatter is otherwise a pure function, so the previous sample lives in a
+     static — the same trick the network widget already uses for prevOutputBytes.
+
+   * The clock has to be *measured* with a busy loop (see CPUFrequencyProbe.mm),
+     which blocks for ~15-20 ms. That must never happen on the HUD's render path,
+     so it is sampled on its own queue at a fixed cadence and the formatter only
+     ever reads the cached value.
+
+ Neither needs a new entitlement — host_processor_info and inline assembly are both
+ open to a jailed app. (The CPU temperature widget next door does need no-sandbox,
+ because IOReport does. The two are unrelated.)
+ */
+
+#import <mach/mach.h>
+#import "CPUFrequencyProbe.h"
+
+// MARK: - CPU load
+
+// Per-core busy fraction from the previous sample, plus the tick counters it came
+// from. Reused across redraws so two CPU widgets in one set share a measurement
+// instead of eating each other's delta.
+static double *gCPUFractions = NULL;
+static natural_t gCPUFractionCount = 0;
+static CFAbsoluteTime gCPUFractionsStamp = 0;
+static BOOL gCPUFractionsValid = NO;
+
+// How long a computed sample stays usable. Longer than any single redraw, far
+// shorter than the widget's own update interval (1 s by default), so every redraw
+// still gets a fresh measurement.
+#define CPU_USAGE_CACHE_SECONDS 0.25
+
+static uint64_t *gPrevCPUTicks = NULL;
+static natural_t gPrevCPUTickCount = 0;
+
+/// Snapshot the per-core tick counters. The caller owns `*outTicks`.
+static BOOL copyCPUTicks(uint64_t **outTicks, natural_t *outCount)
+{
+    processor_info_array_t info = NULL;
+    mach_msg_type_number_t infoCount = 0;
+    natural_t cpuCount = 0;
+
+    kern_return_t kr = host_processor_info(mach_host_self(),
+                                           PROCESSOR_CPU_LOAD_INFO,
+                                           &cpuCount,
+                                           &info,
+                                           &infoCount);
+    if (kr != KERN_SUCCESS || info == NULL || cpuCount == 0) {
+        return NO;
+    }
+
+    const natural_t states = CPU_STATE_MAX;
+    uint64_t *ticks = malloc(sizeof(uint64_t) * cpuCount * states);
+    if (ticks != NULL) {
+        for (natural_t core = 0; core < cpuCount; core++) {
+            for (natural_t state = 0; state < states; state++) {
+                ticks[core * states + state] = (uint64_t)info[core * states + state];
+            }
+        }
+        *outTicks = ticks;
+        *outCount = cpuCount;
+    }
+
+    // host_processor_info hands back a vm_allocate()d array. Not freeing it leaks a
+    // page on every call, and this runs once per redraw.
+    vm_deallocate(mach_task_self(),
+                  (vm_address_t)info,
+                  (vm_size_t)(infoCount * sizeof(integer_t)));
+
+    return ticks != NULL;
+}
+
+/// Per-core busy fractions, memoised for `CPU_USAGE_CACHE_SECONDS`.
+///
+/// `*outFractions` points at the cache — the caller must **not** free it. Returns
+/// NO while there is still no baseline to subtract (the first sample after launch,
+/// or after the core count changed), which is what makes the widget show "--" once
+/// rather than a fabricated 0 %.
+static BOOL cpuBusyFractions(double **outFractions, natural_t *outCount)
+{
+    CFAbsoluteTime now = CFAbsoluteTimeGetCurrent();
+    if ((now - gCPUFractionsStamp) < CPU_USAGE_CACHE_SECONDS) {
+        *outFractions = gCPUFractions;
+        *outCount = gCPUFractionCount;
+        return gCPUFractionsValid;
+    }
+
+    uint64_t *ticks = NULL;
+    natural_t count = 0;
+    if (!copyCPUTicks(&ticks, &count)) {
+        gCPUFractionsStamp = now;
+        gCPUFractionsValid = NO;
+        return NO;
+    }
+
+    // No usable baseline yet: keep this snapshot and report "no reading". The
+    // negative result is cached too, so every widget in the same redraw agrees.
+    if (gPrevCPUTicks == NULL || gPrevCPUTickCount != count) {
+        free(gPrevCPUTicks);
+        gPrevCPUTicks = ticks;
+        gPrevCPUTickCount = count;
+        gCPUFractionsStamp = now;
+        gCPUFractionsValid = NO;
+        return NO;
+    }
+
+    const natural_t states = CPU_STATE_MAX;
+    double *fractions = malloc(sizeof(double) * count);
+    if (fractions == NULL) {
+        free(ticks);
+        gCPUFractionsStamp = now;
+        gCPUFractionsValid = NO;
+        return NO;
+    }
+
+    for (natural_t core = 0; core < count; core++) {
+        uint64_t busy = 0;
+        uint64_t total = 0;
+        for (natural_t state = 0; state < states; state++) {
+            uint64_t nowTicks = ticks[core * states + state];
+            uint64_t beforeTicks = gPrevCPUTicks[core * states + state];
+            uint64_t delta = nowTicks >= beforeTicks ? nowTicks - beforeTicks : 0;
+            total += delta;
+            if (state != CPU_STATE_IDLE) {
+                busy += delta;
+            }
+        }
+        fractions[core] = total == 0 ? 0.0 : (double)busy / (double)total;
+    }
+
+    free(gPrevCPUTicks);
+    gPrevCPUTicks = ticks;
+    gPrevCPUTickCount = count;
+
+    free(gCPUFractions);
+    gCPUFractions = fractions;
+    gCPUFractionCount = count;
+    gCPUFractionsStamp = CFAbsoluteTimeGetCurrent();
+    gCPUFractionsValid = YES;
+
+    *outFractions = gCPUFractions;
+    *outCount = gCPUFractionCount;
+    return YES;
+}
+
+/// `mode`: 0 = average across cores, 1 = busiest core.
+static NSString* formattedCPUUsage(NSInteger mode, BOOL showPercentage, NSInteger decimals)
+{
+    double *fractions = NULL;
+    natural_t count = 0;
+    if (!cpuBusyFractions(&fractions, &count) || fractions == NULL || count == 0) {
+        return @"--";
+    }
+
+    double value = 0.0;
+    if (mode == 1) {
+        for (natural_t i = 0; i < count; i++) {
+            if (fractions[i] > value) {
+                value = fractions[i];
+            }
+        }
+    } else {
+        for (natural_t i = 0; i < count; i++) {
+            value += fractions[i];
+        }
+        value /= (double)count;
+    }
+
+    // A tick counter that wrapped, or a core that came online mid-sample, can push
+    // the ratio a hair outside [0, 1].
+    if (value < 0.0) value = 0.0;
+    if (value > 1.0) value = 1.0;
+
+    NSString *number = [NSString stringWithFormat:(decimals == 1 ? @"%.1f" : @"%.0f"),
+                        value * 100.0];
+    return showPercentage ? [number stringByAppendingString:@"%"] : number;
+}
+
+// MARK: - CPU frequency
+
+// kHz; 0 means "no usable reading yet". An integer rather than a double so the
+// sampling queue and the render path can share it without a lock — a naturally
+// aligned 64-bit load/store is atomic on arm64, and this is only ever a hint for a
+// status-bar readout, so a stale value on a torn read would not matter anyway.
+static uint64_t gCPUFrequencyKHz = 0;
+static CFAbsoluteTime gCPUFrequencyStamp = 0;
+static BOOL gCPUFrequencySampling = NO;
+
+// How long a measured clock stays usable.
+//
+// Two reasons this is seconds rather than "every redraw". The obvious one is cost:
+// the probe is a ~15-20 ms full-speed busy loop, so running it per second would
+// spend about 2 % of a performance core forever.
+//
+// The other one is that the probe would be measuring its own effect. It raises the
+// clock on the core it lands on in order to read a meaningful number, so sampling
+// it every second would keep the CPU boosted — the widget would be causing part of
+// the load it reports, and the battery cost of a status-bar readout would be real.
+// Between samples the readout repeats the last measurement, which is what every
+// other monitor does too.
+#define CPU_FREQUENCY_SAMPLE_SECONDS 3.0
+
+static dispatch_queue_t cpuFrequencyQueue(void)
+{
+    static dispatch_once_t once;
+    static dispatch_queue_t queue = NULL;
+    dispatch_once(&once, ^{
+        queue = dispatch_queue_create("com.leemin.helium.cpufreq", DISPATCH_QUEUE_SERIAL);
+    });
+    return queue;
+}
+
+/// Kick off a measurement if the cached one has gone stale. Returns immediately.
+static void cpuFrequencyScheduleIfStale(void)
+{
+    CFAbsoluteTime now = CFAbsoluteTimeGetCurrent();
+
+    // Throttled on time alone, success or failure: on a device where the probe
+    // cannot produce a plausible number, keying off "do we have a value" would burn
+    // a 20 ms busy loop on every single redraw.
+    if (gCPUFrequencySampling || (now - gCPUFrequencyStamp) < CPU_FREQUENCY_SAMPLE_SECONDS) {
+        return;
+    }
+
+    gCPUFrequencySampling = YES;
+    dispatch_async(cpuFrequencyQueue(), ^{
+        uint64_t megahertz = helium_measure_cpu_frequency_mhz();
+        gCPUFrequencyKHz = megahertz * 1000ull;   // 0 on failure; retried in 3 s
+        gCPUFrequencyStamp = CFAbsoluteTimeGetCurrent();
+        gCPUFrequencySampling = NO;
+    });
+}
+
+/// `unit`: 0 = GHz, 1 = MHz.
+static NSString* formattedCPUFrequency(NSInteger unit)
+{
+    // Never block the render path: ask for a fresh sample, then report whatever the
+    // last one produced. The first redraw after launch therefore shows "--" and the
+    // next one shows a number.
+    cpuFrequencyScheduleIfStale();
+
+    uint64_t khz = gCPUFrequencyKHz;
+    if (khz == 0) {
+        return @"--";
+    }
+
+    if (unit == 1) {
+        return [NSString stringWithFormat:@"%llu MHz", khz / 1000ull];
+    }
+    return [NSString stringWithFormat:@"%.2f GHz", (double)khz / 1000000.0];
+}
+
 #pragma mark - Battery Widget
 /*
  Battery Widget Identifiers:
@@ -1062,6 +1323,20 @@ void formatParsedInfo(NSDictionary *parsedInfo, NSInteger parsedID, NSMutableAtt
             // CPU Temp
             widgetString = formattedCPUTemp(
                 [parsedInfo valueForKey:@"useFahrenheit"] ? [[parsedInfo valueForKey:@"useFahrenheit"] boolValue] : NO
+            );
+            break;
+        case 11:
+            // CPU Usage
+            widgetString = formattedCPUUsage(
+                [parsedInfo valueForKey:@"usageMode"] ? [[parsedInfo valueForKey:@"usageMode"] integerValue] : 0,
+                [parsedInfo valueForKey:@"showPercentage"] ? [[parsedInfo valueForKey:@"showPercentage"] boolValue] : YES,
+                [parsedInfo valueForKey:@"decimals"] ? [[parsedInfo valueForKey:@"decimals"] integerValue] : 0
+            );
+            break;
+        case 12:
+            // CPU Frequency
+            widgetString = formattedCPUFrequency(
+                [parsedInfo valueForKey:@"freqUnit"] ? [[parsedInfo valueForKey:@"freqUnit"] integerValue] : 0
             );
             break;
         default:

@@ -24,6 +24,11 @@ enum WidgetModule: Int, CaseIterable {
 
     // CPU/SoC die temperature, read through IOReport (see WidgetManager.mm)
     case cpuTemperature = 10
+
+    // CPU load and clock. Both are sampled in WidgetManager.mm: the load needs two
+    // tick readings to subtract, and the clock has to be measured with a busy loop.
+    case cpuUsage = 11
+    case cpuFrequency = 12
 }
 
 struct WidgetIDStruct: Identifiable, Equatable {
@@ -463,6 +468,10 @@ class WidgetDetails {
             return (NSLocalizedString("Weather", comment: ""), "🌤 20℃")
         case .cpuTemperature:
             return (NSLocalizedString("CPU Temperature", comment: ""), "42.50ºC")
+        case .cpuUsage:
+            return (NSLocalizedString("CPU Usage", comment: ""), "37%")
+        case .cpuFrequency:
+            return (NSLocalizedString("CPU Frequency", comment: ""), "2.39 GHz")
         }
     }
     

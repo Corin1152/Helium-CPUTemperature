@@ -90,6 +90,11 @@
 "Input Location Name" = "输入地区名称";
 "Get Location ID" = "获取地区ID";
 "Show Percent (%) Symbol" = "显示电量%";
+"Usage Mode" = "统计方式";
+"Average" = "平均";
+"Busiest Core" = "最高核心";
+"Decimal Places" = "小数位";
+"Frequency Unit" = "频率单位";
 "Fill Symbol" = "填充符号";
 "No Configurable Aspects" = "无可配置项";
 "Save Changes" = "保存更改";
@@ -178,6 +183,8 @@
 "Charging Symbol" = "充电符号";
 "Weather" = "天气";
 "CPU Temperature" = "CPU温度";
+"CPU Usage" = "CPU占用";
+"CPU Frequency" = "CPU频率";
 "Diagnostics" = "诊断";
 "Temperature Diagnostics" = "温度诊断";
 "Shows which temperature sources this device actually exposes. The same report is written to /var/mobile/Documents/HeliumTempDiag.txt" = "显示本机实际可用的温度数据来源。同样的报告会写入 /var/mobile/Documents/HeliumTempDiag.txt";

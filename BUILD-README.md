@@ -1,6 +1,57 @@
-# Helium — 新增「CPU温度」部件（已打补丁源码 + 一键构建包）
+# Helium — 新增「CPU温度」「CPU占用」「CPU频率」部件
 
 ## 这是什么
+
+一份**已经改好代码的完整 Helium 源码**，在原有基础上新增了三个状态栏悬浮部件：
+「CPU温度」（编号 10）、「CPU占用」（编号 11）、「CPU频率」（编号 12）。
+
+## 追加（2026-09-29）：CPU占用 / CPU频率
+
+### 部件一览
+
+| 项目 | CPU占用（11） | CPU频率（12） |
+| --- | --- | --- |
+| 数据源 | `host_processor_info(PROCESSOR_CPU_LOAD_INFO)`，两次采样求差 | `CPUFrequencyProbe.mm` 的周期计数忙循环实测 |
+| 显示格式 | `37%` / `37.4%` | `2.39 GHz` / `2390 MHz` |
+| 设置项 | 统计方式（平均 / 最高核心）、小数位（0 / 1）、是否显示 `%` | 频率单位（GHz / MHz） |
+| 存储字段 | `usageMode`、`decimals`、`showPercentage` | `freqUnit` |
+| 权限 | 无 | 无 |
+
+两个部件都**不需要新的 entitlement** —— `host_processor_info` 与内联汇编对沙箱 App 都是开放的。
+（旁边的「CPU温度」要 `no-sandbox`，那是因为 IOReport 要，两者无关。）
+
+### 两个实现要点
+
+**占用率必须两次采样求差。** 内核给的是**累计 tick 计数**，不是百分比。而 Helium 的
+`formattedAttributedString()` 是无状态纯函数、由定时器驱动重绘，所以上一次的 tick 存在
+文件级 `static` 里 —— 这正是网速部件算 `prevOutputBytes` 用的同一招。
+另外缓存了 0.25 秒的计算结果：同一组里放两个 CPU 部件时，第二次调用才不会把第一次的差值吃掉。
+
+**频率探针绝不能在渲染路径上跑。** 它是一段约 15–20 ms 的满速忙循环（原理见
+`CPUFrequencyProbe.mm` 的文件头注释），放主线程上就是肉眼可见的卡顿。所以它跑在自己的
+串行队列上，每 3 秒采一次，渲染路径**只读缓存**。3 秒这个间隔还有第二层原因：探针为了读到
+有意义的数字会先把所在核心的频率顶上去，采样太勤就变成「部件自己造成了它测到的那部分负载」。
+
+读不到时显示 `--`（与旁边温度部件的 `??ºC` 同一个约定）。
+
+### 改动文件
+
+| 文件 | 改动 |
+| --- | --- |
+| `src/controllers/WidgetManager.swift` | 枚举新增 `cpuUsage = 11`、`cpuFrequency = 12`；`WidgetDetails` 加名称与示例 |
+| `src/widgets/WidgetManager.mm` | `host_processor_info` 差分 + 频率缓存读取；`formatParsedInfo` 加 `case 11` / `case 12` |
+| `src/widgets/CPUFrequencyProbe.{h,mm}` | **新增**：周期计数探针（移植自 SysProbe，Apache-2.0） |
+| `src/views/widget/WidgetPreferencesView.swift` | 两个部件的设置页 UI + 保存逻辑 |
+| `src/views/widget/WidgetPreviewsView.swift` | 两个预览分支 |
+| `layout/.../{en,zh-Hans}.lproj/Localizable.strings` | 各 +7 条 |
+
+> `Makefile` **不用改**：它的 `$(wildcard $(SRC_DIR)/widgets/*.mm)` 会自动收下新文件。
+
+---
+
+# 原有内容（CPU温度部件）
+
+## 这是什么（CPU温度）
 
 一份**已经改好代码的完整 Helium 源码**，新增了「CPU 温度」状态栏悬浮部件。
 你只需要在一台 Mac 上跑一条命令，就能得到可直接用巨魔（TrollStore）安装的 `.ipa`。

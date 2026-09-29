@@ -165,6 +165,58 @@ struct WidgetPreferencesView: View {
                             }
                         }
                 }
+            case .cpuUsage:
+                // MARK: CPU Usage Options
+                VStack {
+                    HStack {
+                        Text(NSLocalizedString("Usage Mode", comment:"")).foregroundColor(.primary).bold()
+                        Spacer()
+                        Picker(selection: $intSelection) {
+                            Text(NSLocalizedString("Average", comment:"")).tag(0)
+                            Text(NSLocalizedString("Busiest Core", comment:"")).tag(1)
+                        } label: {}
+                        .pickerStyle(.menu)
+                        .onAppear {
+                            intSelection = widgetID.config["usageMode"] as? Int ?? 0
+                        }
+                    }
+                    HStack {
+                        Text(NSLocalizedString("Decimal Places", comment:"")).foregroundColor(.primary).bold()
+                        Spacer()
+                        Picker(selection: $intSelection2) {
+                            Text("0").tag(0)
+                            Text("1").tag(1)
+                        } label: {}
+                        .pickerStyle(.menu)
+                        .onAppear {
+                            intSelection2 = widgetID.config["decimals"] as? Int ?? 0
+                        }
+                    }
+                    Toggle(isOn: $boolSelection) {
+                        // Same key as the battery-capacity widget's switch, and the
+                        // same string, so it stays one entry in the tables.
+                        Text(NSLocalizedString("Show Percent (%) Symbol", comment:""))
+                            .foregroundColor(.primary)
+                            .bold()
+                    }
+                    .onAppear {
+                        boolSelection = widgetID.config["showPercentage"] as? Bool ?? true
+                    }
+                }
+            case .cpuFrequency:
+                // MARK: CPU Frequency Unit
+                HStack {
+                    Text(NSLocalizedString("Frequency Unit", comment:"")).foregroundColor(.primary).bold()
+                    Spacer()
+                    Picker(selection: $intSelection) {
+                        Text("GHz").tag(0)
+                        Text("MHz").tag(1)
+                    } label: {}
+                    .pickerStyle(.menu)
+                    .onAppear {
+                        intSelection = widgetID.config["freqUnit"] as? Int ?? 0
+                    }
+                }
             case .battery:
                 // MARK: Battery Value Type
                 HStack {
@@ -384,6 +436,14 @@ struct WidgetPreferencesView: View {
         case .cpuTemperature:
             // MARK: CPU Temperature Unit Handling
             widgetStruct.config["useFahrenheit"] = intSelection == 1 ? true : false
+        case .cpuUsage:
+            // MARK: CPU Usage Handling
+            widgetStruct.config["usageMode"] = intSelection
+            widgetStruct.config["decimals"] = intSelection2
+            widgetStruct.config["showPercentage"] = boolSelection
+        case .cpuFrequency:
+            // MARK: CPU Frequency Unit Handling
+            widgetStruct.config["freqUnit"] = intSelection
         case .battery:
             // MARK: Battery Value Type Handling
             widgetStruct.config["batteryValueType"] = intSelection

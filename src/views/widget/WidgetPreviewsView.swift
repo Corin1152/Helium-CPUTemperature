@@ -73,6 +73,12 @@ struct WidgetPreviewsView: View {
             text = widget.config["useFahrenheit"] as? Bool ?? false ? "78.84ºF" : "26.02ºC"
         case .cpuTemperature:
             text = widget.config["useFahrenheit"] as? Bool ?? false ? "108.50ºF" : "42.50ºC"
+        case .cpuUsage:
+            let decimals: Int = widget.config["decimals"] as? Int ?? 0
+            let percent: String = (widget.config["showPercentage"] as? Bool ?? true) ? "%" : ""
+            text = decimals == 1 ? "37.4\(percent)" : "37\(percent)"
+        case .cpuFrequency:
+            text = (widget.config["freqUnit"] as? Int ?? 0) == 1 ? "2390 MHz" : "2.39 GHz"
         case .battery:
             let batteryValue: Int = widget.config["batteryValueType"] as? Int ?? 0
             switch (batteryValue) {

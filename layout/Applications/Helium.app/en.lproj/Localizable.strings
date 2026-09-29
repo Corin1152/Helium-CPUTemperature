@@ -89,6 +89,11 @@
 "Input Location Name" = "Input Location Name";
 "Get Location ID" = "Get Location ID";
 "Show Percent (%) Symbol" = "Show Percent (%) Symbol";
+"Usage Mode" = "Usage Mode";
+"Average" = "Average";
+"Busiest Core" = "Busiest Core";
+"Decimal Places" = "Decimal Places";
+"Frequency Unit" = "Frequency Unit";
 "Fill Symbol" = "Fill Symbol";
 "No Configurable Aspects" = "No Configurable Aspects";
 "Save Changes" = "Save Changes";
@@ -174,6 +179,8 @@
 "Charging Symbol" = "Charging Symbol";
 "Weather" = "Weather";
 "CPU Temperature" = "CPU Temperature";
+"CPU Usage" = "CPU Usage";
+"CPU Frequency" = "CPU Frequency";
 "Diagnostics" = "Diagnostics";
 "Temperature Diagnostics" = "Temperature Diagnostics";
 "Shows which temperature sources this device actually exposes. The same report is written to /var/mobile/Documents/HeliumTempDiag.txt" = "Shows which temperature sources this device actually exposes. The same report is written to /var/mobile/Documents/HeliumTempDiag.txt";
