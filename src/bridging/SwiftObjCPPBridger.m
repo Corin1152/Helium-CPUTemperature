@@ -37,3 +37,13 @@ NSString* HeliumTemperatureDiagnosticsBridger()
 {
     return HeliumTemperatureDiagnostics();
 }
+
+#pragma mark - Cellular Signal
+
+// Implemented in widget/WidgetManager.mm
+extern NSString* HeliumCellularSignalStatus(void);
+
+NSString* HeliumCellularSignalStatusBridger()
+{
+    return HeliumCellularSignalStatus();
+}

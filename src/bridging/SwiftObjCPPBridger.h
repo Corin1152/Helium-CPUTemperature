@@ -15,3 +15,10 @@ void waitForNotificationBridger(void (^onFinish)(), BOOL isEnabled);
 
 #pragma mark - CPU Temperature Diagnostics
 NSString* HeliumTemperatureDiagnosticsBridger();
+
+#pragma mark - Cellular Signal
+/// State of the cellular-signal probe: "pending" / "ok" / "unavailable".
+///
+/// Surfaced in the widget's preferences screen because a missing CommCenter
+/// entitlement fails silently — the widget would just show "--" forever.
+NSString* HeliumCellularSignalStatusBridger();

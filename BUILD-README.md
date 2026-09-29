@@ -1,12 +1,81 @@
-# Helium — 新增「CPU温度」「CPU占用」「CPU频率」部件
+# Helium — 新增「CPU温度」「CPU占用」「CPU频率」「蜂窝信号」部件
 
 ## 这是什么
 
-一份**已经改好代码的完整 Helium 源码**，在原有基础上新增了三个状态栏悬浮部件：
-「CPU温度」（编号 10）、「CPU占用」（编号 11）、「CPU频率」（编号 12）。
+一份**已经改好代码的完整 Helium 源码**，在原有基础上新增了四个状态栏悬浮部件：
+「CPU温度」（编号 10）、「CPU占用」（编号 11）、「CPU频率」（编号 12）、「蜂窝信号」（编号 13）。
 
-版本：显示版本 `3.2.6-01`（`CFBundleShortVersionString`），构建号 `3.2.6`（`CFBundleVersion`）。
+版本：显示版本 `3.2.6-02`（`CFBundleShortVersionString`），构建号 `3.2.7`（`CFBundleVersion`）。
 产物：`Helium-C.ipa`。
+
+## 追加（2026-09-29）：蜂窝信号（RSRP）
+
+### 它是什么
+
+参考信号接收功率，单位 dBm，**恒为负数**（约 -44 … -140），越接近 0 信号越好。
+这是 4G/5G 里衡量基站信号强度的核心指标 —— 比系统状态栏那几格信号精确得多。
+
+| 项目 | 内容 |
+| --- | --- |
+| 数据源 | CoreTelephony 私有接口 `CoreTelephonyClient.getSignalStrengthMeasurements:` → `CTSignalStrengthMeasurements.rsrp` |
+| 显示格式 | `-95 dBm` / `-95` |
+| 设置项 | 卡槽（自动 / 卡1 / 卡2）、是否显示单位、**状态行** |
+| 存储字段 | `signalSlot`、`showUnit` |
+| 权限 | **`com.apple.CommCenter.fine-grained = ["spi"]`**（`ent.plist` 里已加） |
+| 最低系统 | iOS 13.0+ |
+
+### 为什么它和前面三个不一样
+
+**它是唯一一个「会静默失败」的部件。** 前面三个（CPU 温度/占用/频率）读不到就显示占位符，
+原因只有一种；而这个部件在**没有 CommCenter 权限**时，取数调用**不抛异常、不打日志**，
+只是永远拿不到值 —— 界面上和「没有服务」长得一模一样。
+
+所以做了两件事：
+
+1. `CellularSignalProbe.mm` 记录探针自己的状态（`pending` / `ok` / `unavailable`）；
+2. 部件的设置页顶部有一行**状态**，`unavailable` 时会提示检查 CommCenter 权限。
+
+`--` 到底是「无服务」还是「没权限」，只有那一行能区分。
+
+### 另外两个实现要点
+
+- **CoreTelephony 是运行时 dlopen 的。** Helium 不链接它，所以
+  `NSClassFromString(@"CoreTelephonyClient")` 一开始会返回 Nil —— 必须先 dlopen
+  `/System/Library/Frameworks/CoreTelephony.framework/CoreTelephony`。
+  私有类/方法全部按名字解析，改名或移除时降级为「读不到」，不会崩。
+- **XPC 往返不能放在渲染路径上。** 与 CPU 频率同一个处理：后台串行队列每 3 秒采一次，
+  渲染只读缓存；卡槽配置变了就立即重采（否则会短暂显示另一张卡的信号）。
+
+### 权限只给了 `spi`
+
+上游 CellularInfo 带的是完整 12 个值（它还要做 IPCC 安装、频段写入、eSIM 检测），
+但读 RSRP 只需要 `spi` —— 依据是上游自己的能力判定代码：
+
+```swift
+static func hasCommCenterSPI() -> Bool {
+    return EntitlementUtils.exists(["com.apple.CommCenter.fine-grained", "spi"])
+}
+```
+
+而它 README 里「无需额外权利可以查询的数据」一节**不含 RSRP**。
+真机上若读数一直是 `--` 且状态行显示「不可用」，再逐个补 `internal` 等值。
+
+### 改动文件
+
+| 文件 | 改动 |
+| --- | --- |
+| `ent.plist` | 新增 `com.apple.CommCenter.fine-grained = ["spi"]`（67 → 68 条） |
+| `src/controllers/WidgetManager.swift` | 枚举新增 `cellularSignal = 13`；`WidgetDetails` 加名称与示例 |
+| `src/widgets/CellularSignalProbe.{h,mm}` | **新增**：运行时解析 CoreTelephony 私有接口 + 状态上报 |
+| `src/widgets/WidgetManager.mm` | 后台采样器 + 缓存；`formatParsedInfo` 加 `case 13` |
+| `src/bridging/SwiftObjCPPBridger.{h,m}` | 新增 `HeliumCellularSignalStatusBridger()` |
+| `src/views/widget/WidgetPreferencesView.swift` | 状态行 + 卡槽 + 单位；保存逻辑 |
+| `src/views/widget/WidgetPreviewsView.swift` | 预览分支 |
+| `layout/.../{en,zh-Hans}.lproj/Localizable.strings` | 各 +10 条 |
+
+> `Makefile` 不用改：新 `.mm` 由 `widgets/*.mm` 的 wildcard 自动收。
+
+---
 
 ## 追加（2026-09-29）：CPU占用 / CPU频率
 

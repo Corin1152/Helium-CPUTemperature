@@ -22,6 +22,25 @@ struct WidgetPreferencesView: View {
     
     @State var modified: Bool = false
     @State private var isPresented = false
+
+    /// 蜂窝信号探针的状态（"pending" / "ok" / "unavailable"），见 SwiftObjCPPBridger.h。
+    @State private var cellularStatus: String = ""
+
+    /// 状态行的文案。`unavailable` 的说明刻意把「权限」写进去 —— 那是它最常见的原因。
+    private var cellularStatusText: String {
+        switch cellularStatus {
+        case "ok":
+            return NSLocalizedString("Available", comment:"")
+        case "unavailable":
+            return NSLocalizedString("Unavailable - check the CommCenter entitlement", comment:"")
+        default:
+            return NSLocalizedString("Checking…", comment:"")
+        }
+    }
+
+    private var cellularStatusIsOK: Bool {
+        return cellularStatus == "ok"
+    }
     
     let timeFormats: [String] = [
         "hh:mm",
@@ -216,6 +235,47 @@ struct WidgetPreferencesView: View {
                     .onAppear {
                         intSelection = widgetID.config["freqUnit"] as? Int ?? 0
                     }
+                }
+            case .cellularSignal:
+                // MARK: Cellular Signal Options
+                VStack {
+                    // 权限/可用性状态行。
+                    //
+                    // 这一行不是装饰：没有 CommCenter 权限时，取数调用不抛异常、不打日志，
+                    // 只是永远拿不到值 —— 小部件会一直显示 `--`。那一行 `--` 到底是
+                    // 「无服务」还是「没权限」，只有这里能区分。
+                    HStack {
+                        Text(NSLocalizedString("Status", comment:"")).foregroundColor(.primary).bold()
+                        Spacer()
+                        Text(cellularStatusText)
+                            .foregroundColor(cellularStatusIsOK ? .secondary : .orange)
+                    }
+                    HStack {
+                        Text(NSLocalizedString("SIM Slot", comment:"")).foregroundColor(.primary).bold()
+                        Spacer()
+                        Picker(selection: $intSelection) {
+                            Text(NSLocalizedString("Auto", comment:"")).tag(0)
+                            Text(NSLocalizedString("Slot 1", comment:"")).tag(1)
+                            Text(NSLocalizedString("Slot 2", comment:"")).tag(2)
+                        } label: {}
+                        .pickerStyle(.menu)
+                        .onAppear {
+                            intSelection = widgetID.config["signalSlot"] as? Int ?? 0
+                        }
+                    }
+                    Toggle(isOn: $boolSelection) {
+                        Text(NSLocalizedString("Show Unit (dBm)", comment:""))
+                            .foregroundColor(.primary)
+                            .bold()
+                    }
+                    .onAppear {
+                        boolSelection = widgetID.config["showUnit"] as? Bool ?? true
+                    }
+                }
+                .onAppear {
+                    // 读一次缓存状态；若还没采过样，这一句会顺带安排一次采样，
+                    // 下次进入这个页面就能看到确定结果。
+                    cellularStatus = HeliumCellularSignalStatusBridger() ?? ""
                 }
             case .battery:
                 // MARK: Battery Value Type
@@ -444,6 +504,10 @@ struct WidgetPreferencesView: View {
         case .cpuFrequency:
             // MARK: CPU Frequency Unit Handling
             widgetStruct.config["freqUnit"] = intSelection
+        case .cellularSignal:
+            // MARK: Cellular Signal Handling
+            widgetStruct.config["signalSlot"] = intSelection
+            widgetStruct.config["showUnit"] = boolSelection
         case .battery:
             // MARK: Battery Value Type Handling
             widgetStruct.config["batteryValueType"] = intSelection

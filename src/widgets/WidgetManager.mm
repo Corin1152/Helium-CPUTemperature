@@ -1153,6 +1153,102 @@ static NSString* formattedCPUFrequency(NSInteger unit)
     return [NSString stringWithFormat:@"%.2f GHz", (double)khz / 1000000.0];
 }
 
+// MARK: - Cellular signal (RSRP)
+
+/*
+ Same shape as the CPU frequency widget above, and for the same reason: the
+ reading comes from an XPC round-trip to CommCenter, which must never happen on
+ the HUD's render path. A background queue samples every few seconds and the
+ formatter only reads the cache.
+
+ The difference from every other widget in this file is that this one can fail
+ *silently* — see CellularSignalProbe.h. When CommCenter refuses the connection
+ (missing `com.apple.CommCenter.fine-grained`), nothing throws and nothing is
+ logged; the number just never arrives. So the probe records its own state and
+ the widget's preferences screen surfaces it.
+*/
+
+#import "CellularSignalProbe.h"
+
+// dBm; 0 means "no reading yet". RSRP is always negative, so 0 is a safe
+// sentinel and needs no separate flag.
+static int32_t gSignalRSRPDbm = 0;
+// The slot the cached value came from. A widget configured for a different slot
+// must not show it, so the cache is keyed on this and a mismatch reports
+// "no reading" until the new sample lands.
+static int32_t gSignalSlot = -1;
+static CFAbsoluteTime gSignalStamp = 0;
+static BOOL gSignalSampling = NO;
+
+// How long a reading stays usable.
+//
+// Longer than the CPU clock's 3 s would be tempting — RSRP moves slowly — but
+// this is the one number a user watches while walking around hunting for signal,
+// and the call itself is sub-millisecond, so 3 s keeps it responsive without
+// making the XPC traffic noticeable.
+#define CELLULAR_SIGNAL_SAMPLE_SECONDS 3.0
+
+static dispatch_queue_t cellularSignalQueue(void)
+{
+    static dispatch_once_t once;
+    static dispatch_queue_t queue = NULL;
+    dispatch_once(&once, ^{
+        queue = dispatch_queue_create("com.leemin.helium.cellularsignal", DISPATCH_QUEUE_SERIAL);
+    });
+    return queue;
+}
+
+/// Kick off a sample if the cache is stale (or belongs to another slot).
+/// Returns immediately.
+static void cellularSignalScheduleIfStale(int32_t slot)
+{
+    CFAbsoluteTime now = CFAbsoluteTimeGetCurrent();
+    if (gSignalSampling) {
+        return;
+    }
+    if (slot == gSignalSlot && (now - gSignalStamp) < CELLULAR_SIGNAL_SAMPLE_SECONDS) {
+        return;
+    }
+
+    gSignalSampling = YES;
+    dispatch_async(cellularSignalQueue(), ^{
+        int32_t value = helium_cellular_rsrp_dbm(slot);
+        gSignalRSRPDbm = value;
+        gSignalSlot = slot;
+        gSignalStamp = CFAbsoluteTimeGetCurrent();
+        gSignalSampling = NO;
+    });
+}
+
+/// `slot`: 0 follows the SIM the system is using for data, 1/2 pick explicitly.
+static NSString* formattedCellularSignal(int32_t slot, BOOL showUnit)
+{
+    cellularSignalScheduleIfStale(slot);
+
+    // The cache is only valid for the slot it came from — otherwise switching
+    // the widget from slot 1 to slot 2 would briefly show slot 1's signal.
+    int32_t value = (slot == gSignalSlot) ? gSignalRSRPDbm : 0;
+    if (value >= 0) {
+        return @"--";
+    }
+
+    NSString *number = [NSString stringWithFormat:@"%d", value];
+    return showUnit ? [number stringByAppendingString:@" dBm"] : number;
+}
+
+/// State of the last probe, for the widget's preferences screen.
+///
+/// If nothing has been sampled yet, ask for one and report "pending" — the
+/// caller is a settings screen, not the render path, so it can afford to wait
+/// for the next redraw rather than block here.
+extern "C" NSString* HeliumCellularSignalStatus(void)
+{
+    if (gSignalSlot < 0 && !gSignalSampling) {
+        cellularSignalScheduleIfStale(0);
+    }
+    return [NSString stringWithUTF8String:helium_cellular_signal_state()];
+}
+
 #pragma mark - Battery Widget
 /*
  Battery Widget Identifiers:
@@ -1339,6 +1435,13 @@ void formatParsedInfo(NSDictionary *parsedInfo, NSInteger parsedID, NSMutableAtt
             // CPU Frequency
             widgetString = formattedCPUFrequency(
                 [parsedInfo valueForKey:@"freqUnit"] ? [[parsedInfo valueForKey:@"freqUnit"] integerValue] : 0
+            );
+            break;
+        case 13:
+            // Cellular Signal (RSRP)
+            widgetString = formattedCellularSignal(
+                [parsedInfo valueForKey:@"signalSlot"] ? [[parsedInfo valueForKey:@"signalSlot"] intValue] : 0,
+                [parsedInfo valueForKey:@"showUnit"] ? [[parsedInfo valueForKey:@"showUnit"] boolValue] : YES
             );
             break;
         default:

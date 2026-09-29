@@ -29,6 +29,10 @@ enum WidgetModule: Int, CaseIterable {
     // tick readings to subtract, and the clock has to be measured with a busy loop.
     case cpuUsage = 11
     case cpuFrequency = 12
+
+    // RSRP, read through CoreTelephony's private signal-strength API. Sampled in
+    // WidgetManager.mm; needs the CommCenter entitlement (see ent.plist).
+    case cellularSignal = 13
 }
 
 struct WidgetIDStruct: Identifiable, Equatable {
@@ -472,6 +476,8 @@ class WidgetDetails {
             return (NSLocalizedString("CPU Usage", comment: ""), "37%")
         case .cpuFrequency:
             return (NSLocalizedString("CPU Frequency", comment: ""), "2.39 GHz")
+        case .cellularSignal:
+            return (NSLocalizedString("Cellular Signal", comment: ""), "-95 dBm")
         }
     }
     

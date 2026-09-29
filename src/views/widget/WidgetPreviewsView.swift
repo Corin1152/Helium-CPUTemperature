@@ -79,6 +79,8 @@ struct WidgetPreviewsView: View {
             text = decimals == 1 ? "37.4\(percent)" : "37\(percent)"
         case .cpuFrequency:
             text = (widget.config["freqUnit"] as? Int ?? 0) == 1 ? "2390 MHz" : "2.39 GHz"
+        case .cellularSignal:
+            text = (widget.config["showUnit"] as? Bool ?? true) ? "-95 dBm" : "-95"
         case .battery:
             let batteryValue: Int = widget.config["batteryValueType"] as? Int ?? 0
             switch (batteryValue) {

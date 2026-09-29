@@ -4,6 +4,17 @@
 <dict>
 	<key>com.apple.AXMediaUtilitiesService-access</key>
 	<true/>
+	<!--
+	  RSRP（蜂窝信号小部件）要读 CoreTelephony 的私有信号强度接口，
+	  这条权限是 CommCenter 在建立 XPC 连接时校验的。
+	  只给 spi：上游 CellularInfo 自己的能力判定就是 exists([… , "spi"])，
+	  而它 README 里「无需额外权利可以查询的数据」一节不含 RSRP。
+	  真机若读数一直是占位符，再逐个补 internal 等值。
+	-->
+	<key>com.apple.CommCenter.fine-grained</key>
+	<array>
+		<string>spi</string>
+	</array>
 	<key>com.apple.DragUI.accessibility</key>
 	<true/>
 	<key>com.apple.QuartzCore.displayable-context</key>

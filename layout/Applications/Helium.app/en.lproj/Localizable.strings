@@ -94,6 +94,15 @@
 "Busiest Core" = "Busiest Core";
 "Decimal Places" = "Decimal Places";
 "Frequency Unit" = "Frequency Unit";
+"Status" = "Status";
+"SIM Slot" = "SIM Slot";
+"Auto" = "Auto";
+"Slot 1" = "Slot 1";
+"Slot 2" = "Slot 2";
+"Show Unit (dBm)" = "Show Unit (dBm)";
+"Available" = "Available";
+"Unavailable - check the CommCenter entitlement" = "Unavailable - check the CommCenter entitlement";
+"Checking…" = "Checking…";
 "Fill Symbol" = "Fill Symbol";
 "No Configurable Aspects" = "No Configurable Aspects";
 "Save Changes" = "Save Changes";
@@ -181,6 +190,7 @@
 "CPU Temperature" = "CPU Temperature";
 "CPU Usage" = "CPU Usage";
 "CPU Frequency" = "CPU Frequency";
+"Cellular Signal" = "Cellular Signal";
 "Diagnostics" = "Diagnostics";
 "Temperature Diagnostics" = "Temperature Diagnostics";
 "Shows which temperature sources this device actually exposes. The same report is written to /var/mobile/Documents/HeliumTempDiag.txt" = "Shows which temperature sources this device actually exposes. The same report is written to /var/mobile/Documents/HeliumTempDiag.txt";
