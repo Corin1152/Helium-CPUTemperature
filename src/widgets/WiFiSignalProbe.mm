@@ -5,44 +5,42 @@
 //  Wi-Fi 关联状态（公开 API）与接收功率（MobileWiFi 私有框架）。
 //
 //  ══════════════════════════════════════════════════════════════════════════
-//  第一版把 HUD 整个搞崩了，原因有三个，都在这里修掉了
+//  这个文件改过三版，每一版的错误都记在这里，免得再踩
 //  ══════════════════════════════════════════════════════════════════════════
 //
-//  1) **`WiFiManagerClientGetDevice` 会段错误。**
+//  **第一版：整个 HUD 崩掉。**
 //
-//      参考实现里明确写着这一条（ProcursusTeam/netctl 的 `wifi/wifi.m`）：
+//  `WiFiManagerClientGetDevice` 会段错误（netctl 的 `wifi/wifi.m` 里明确写着
+//  `// WiFiManagerClientGetDevice(WiFiManagerRef) segfaults`），而 Helium 的每个
+//  部件都由同一个进程绘制 —— 所以表现是「启用后所有部件一起不显示」。
+//  改用 `WiFiManagerClientCopyDevices` + `CFArrayGetValueAtIndex`。
 //
-//          // WiFiManagerClientGetDevice(WiFiManagerRef) segfaults
-//          CFArrayRef devices = WiFiManagerClientCopyDevices(manager);
-//          client = (WiFiDeviceClientRef)CFArrayGetValueAtIndex(devices, 0);
+//  **第二版：数值卡住不动。**
 //
-//      第一版用的正是那个会崩的函数 —— 它把 HUD 进程直接带走，而 Helium 的
-//      每个部件都由同一个进程绘制，表现就是「启用后所有部件一起不显示」。
+//  一是**读错了属性**。`CFSTR("RSSI")` 在**设备**上返回的是**字典**（要取
+//  `RSSI_CTL_AGR`），那是控制用的聚合值，粒度很粗 —— 表现就是「只有固定几个数值
+//  在跳」。正确做法是走**网络**：
 //
-//  2) **缺两条权限。** netctl 的 entitlements 里有
-//      `com.apple.wifi.manager-access` 与 `com.apple.private.skip-library-validation`
-//      （后者是加载私有框架用的）。见 `ent.plist`。
+//      WiFiNetworkRef network = WiFiDeviceClientCopyCurrentNetwork(device);
+//      CFNumberRef rssi = WiFiNetworkGetProperty(network, CFSTR("RSSI"));  // 浮点 dBm
 //
-//  3) **RSSI 返回的是字典，不是数字。**
+//  这是 David Murray（MobileWiFi 头文件作者）在 `davidmurray/wifi` 与
+//  `davidmurray/airscan` 里的写法：`%.0f dBm` 直接就是这个数。
 //
-//          CFDictionaryRef data = WiFiDeviceClientCopyProperty(client, CFSTR("RSSI"));
-//          CFNumberRef rssi = CFDictionaryGetValue(data, CFSTR("RSSI_CTL_AGR"));
-//
-//      第一版按 CFNumber 解析，类型对不上于是永远读不到 —— 部件静默退回蜂窝，
-//      这正是「已连 Wi-Fi 却显示蜂窝」的原因。
+//  二是**把锁加错了地方**：为了防「每秒重试一次崩一次」，加了个「整个进程只读一次」
+//  的 latch，结果连数值也一起冻住了。**latch 应该只管会话建立，不管读数** ——
+//  会话建好之后，每次采样重新读一遍属性才是「实时值」。
 //
 //  ══════════════════════════════════════════════════════════════════════════
-//  仍然保留的两层防护
+//  现在保留的两层防护
 //  ══════════════════════════════════════════════════════════════════════════
 //
 //  * 「连没连 Wi-Fi」用 `getifaddrs`（公开 API）判断，不在 Wi-Fi 上时**根本不会
 //    碰到私有框架**；
-//  * 整个进程**最多真正尝试一次**（latch）—— 那条路一旦有问题，每秒重试只会
-//    每秒出一次问题。
+//  * 会话建立（dlopen / dlsym / create / 取设备）**整个进程只做一次**，失败就锁定 ——
+//    这条路一旦有问题，每秒重试只会每秒出一次问题。
 //
 //  失败时把「断在哪一步」记进 `helium_wifi_diagnosis()`，由设置页显示。
-//  加这个是因为无法在真机上调试：`dlopen` 失败、符号改名、wifid 拒绝连接，
-//  这几种在界面上看起来完全一样（都只是「数字不动」）。
 //
 
 #import "WiFiSignalProbe.h"
@@ -50,6 +48,7 @@
 #import <CoreFoundation/CoreFoundation.h>
 #import <dlfcn.h>
 #import <ifaddrs.h>
+#import <math.h>
 #import <net/if.h>
 #import <netinet/in.h>
 #import <string.h>
@@ -57,10 +56,14 @@
 // 不透明类型，只按指针用。
 typedef struct __WiFiManager WiFiManager;
 typedef struct __WiFiDeviceClient WiFiDeviceClient;
+typedef struct __WiFiNetwork WiFiNetwork;
 
 typedef WiFiManager *(*WiFiManagerClientCreateFunc)(CFAllocatorRef allocator, int flags);
 typedef CFArrayRef (*WiFiManagerClientCopyDevicesFunc)(WiFiManager *manager);
+typedef WiFiNetwork *(*WiFiDeviceClientCopyCurrentNetworkFunc)(WiFiDeviceClient *device);
 typedef CFPropertyListRef (*WiFiDeviceClientCopyPropertyFunc)(WiFiDeviceClient *device, CFStringRef property);
+typedef CFPropertyListRef (*WiFiNetworkGetPropertyFunc)(WiFiNetwork *network, CFStringRef property);
+typedef float (*WiFiNetworkGetFloatPropertyFunc)(WiFiNetwork *network, CFStringRef property);
 
 static const char *const kDiagnosisNotAttempted = "not-attempted";
 static const char *const kDiagnosisOK = "ok";
@@ -68,11 +71,19 @@ static const char *const kDiagnosisDLOpen = "dlopen-failed";
 static const char *const kDiagnosisSymbols = "symbol-missing";
 static const char *const kDiagnosisCreate = "create-failed";
 static const char *const kDiagnosisNoDevice = "no-device";
+static const char *const kDiagnosisNoNetwork = "no-network";
 static const char *const kDiagnosisUnreadable = "rssi-unreadable";
 
 static const char *gDiagnosis = kDiagnosisNotAttempted;
-static BOOL gAttempted = NO;
-static int32_t gRSSIDbm = 0;
+
+/// 会话状态：0 = 没试过，1 = 可用，-1 = 不可用（已锁定，不再重试）。
+static int gSession = 0;
+static WiFiDeviceClient *gDevice = NULL;
+
+static WiFiDeviceClientCopyCurrentNetworkFunc gCopyCurrentNetwork = NULL;
+static WiFiDeviceClientCopyPropertyFunc gCopyDeviceProperty = NULL;
+static WiFiNetworkGetPropertyFunc gNetworkGetProperty = NULL;
+static WiFiNetworkGetFloatPropertyFunc gNetworkGetFloatProperty = NULL;
 
 // MARK: - 关联判断（公开 API）
 
@@ -107,65 +118,48 @@ BOOL helium_wifi_is_associated(void)
     return associated;
 }
 
-// MARK: - RSSI（私有框架，只试一次）
+// MARK: - 会话（整个进程只建一次）
 
-/// 从一个可能是数字、也可能是「装着数字的字典」的值里取出负的 dBm。
-///
-/// 两种形状都处理：参考实现里 `CFSTR("RSSI")` 给的是字典（键 `RSSI_CTL_AGR`），
-/// 但不同 iOS 版本不一定一致，所以数字那条路也留着。
-static int32_t dBmFromProperty(CFPropertyListRef raw)
+static BOOL ensureSession(void)
 {
-    CFTypeID type = CFGetTypeID(raw);
-
-    if (type == CFDictionaryGetTypeID()) {
-        CFTypeRef inner = CFDictionaryGetValue((CFDictionaryRef)raw, CFSTR("RSSI_CTL_AGR"));
-        if (inner == NULL || CFGetTypeID(inner) != CFNumberGetTypeID()) {
-            return 0;
-        }
-        int number = 0;
-        if (!CFNumberGetValue((CFNumberRef)inner, kCFNumberIntType, &number)) {
-            return 0;
-        }
-        return number < 0 ? (int32_t)number : 0;
+    if (gSession != 0) {
+        return gSession > 0;
     }
 
-    if (type == CFNumberGetTypeID()) {
-        int number = 0;
-        if (!CFNumberGetValue((CFNumberRef)raw, kCFNumberIntType, &number)) {
-            return 0;
-        }
-        return number < 0 ? (int32_t)number : 0;
-    }
-
-    return 0;
-}
-
-/// 读一次 RSSI。**只在 `helium_wifi_rssi_dbm` 里被调用一次。**
-static int32_t readRSSIOnce(void)
-{
     void *handle = dlopen("/System/Library/PrivateFrameworks/MobileWiFi.framework/MobileWiFi",
                           RTLD_LAZY);
     if (handle == NULL) {
         gDiagnosis = kDiagnosisDLOpen;
-        return 0;
+        gSession = -1;
+        return NO;
     }
 
     WiFiManagerClientCreateFunc create =
         (WiFiManagerClientCreateFunc)dlsym(handle, "WiFiManagerClientCreate");
     WiFiManagerClientCopyDevicesFunc copyDevices =
         (WiFiManagerClientCopyDevicesFunc)dlsym(handle, "WiFiManagerClientCopyDevices");
-    WiFiDeviceClientCopyPropertyFunc copyProperty =
+    gCopyCurrentNetwork =
+        (WiFiDeviceClientCopyCurrentNetworkFunc)dlsym(handle, "WiFiDeviceClientCopyCurrentNetwork");
+    gCopyDeviceProperty =
         (WiFiDeviceClientCopyPropertyFunc)dlsym(handle, "WiFiDeviceClientCopyProperty");
+    gNetworkGetProperty =
+        (WiFiNetworkGetPropertyFunc)dlsym(handle, "WiFiNetworkGetProperty");
+    // 可选符号：有就直接拿 float，没有就走 `GetProperty` + 解析 CFNumber。
+    gNetworkGetFloatProperty =
+        (WiFiNetworkGetFloatPropertyFunc)dlsym(handle, "WiFiNetworkGetFloatProperty");
 
-    if (create == NULL || copyDevices == NULL || copyProperty == NULL) {
+    if (create == NULL || copyDevices == NULL || gCopyCurrentNetwork == NULL ||
+        gCopyDeviceProperty == NULL || gNetworkGetProperty == NULL) {
         gDiagnosis = kDiagnosisSymbols;
-        return 0;
+        gSession = -1;
+        return NO;
     }
 
     WiFiManager *manager = create(kCFAllocatorDefault, 0);
     if (manager == NULL) {
         gDiagnosis = kDiagnosisCreate;
-        return 0;
+        gSession = -1;
+        return NO;
     }
 
     // **不要用 `WiFiManagerClientGetDevice`** —— 它会段错误，见文件头的说明。
@@ -175,32 +169,90 @@ static int32_t readRSSIOnce(void)
             CFRelease(devices);
         }
         gDiagnosis = kDiagnosisNoDevice;
-        return 0;
+        gSession = -1;
+        return NO;
     }
-    WiFiDeviceClient *device = (WiFiDeviceClient *)CFArrayGetValueAtIndex(devices, 0);
-
-    CFPropertyListRef raw = copyProperty(device, CFSTR("RSSI"));
-    if (raw == NULL) {
-        CFRelease(devices);
-        gDiagnosis = kDiagnosisUnreadable;
-        return 0;
-    }
-
-    int32_t value = dBmFromProperty(raw);
-    CFRelease(raw);
+    gDevice = (WiFiDeviceClient *)CFArrayGetValueAtIndex(devices, 0);
+    // 设备指针只是数组里的一项；会话本身由 manager 撑着，数组可以不持有。
     CFRelease(devices);
 
-    gDiagnosis = value < 0 ? kDiagnosisOK : kDiagnosisUnreadable;
-    return value;
+    gSession = 1;
+    return YES;
+}
+
+// MARK: - 读数（每次采样都重新读）
+
+/// 从一个 `CFPropertyListRef` 里取负的浮点 dBm。取不到返回 0。
+static int32_t dBmFromNumber(CFPropertyListRef raw)
+{
+    if (raw == NULL || CFGetTypeID(raw) != CFNumberGetTypeID()) {
+        return 0;
+    }
+    float strength = 0;
+    if (!CFNumberGetValue((CFNumberRef)raw, kCFNumberFloatType, &strength)) {
+        return 0;
+    }
+    if (!(strength < 0)) {
+        return 0;
+    }
+    return (int32_t)lroundf(strength);
 }
 
 int32_t helium_wifi_rssi_dbm(void)
 {
-    if (!gAttempted) {
-        gAttempted = YES;
-        gRSSIDbm = readRSSIOnce();
+    if (!ensureSession()) {
+        return 0;
     }
-    return gRSSIDbm;
+
+    // 首选：**当前网络**上的 RSSI。
+    //
+    // 这是 David Murray 的实现用的那条路（`davidmurray/wifi`、`davidmurray/airscan`），
+    // 返回浮点 dBm —— 也就是状态栏上该显示的那个数。
+    WiFiNetwork *network = gCopyCurrentNetwork(gDevice);
+    if (network != NULL) {
+        int32_t value = 0;
+
+        // 先试直接返回 float 的那个（省掉类型解析）。
+        if (gNetworkGetFloatProperty != NULL) {
+            float strength = gNetworkGetFloatProperty(network, CFSTR("RSSI"));
+            if (strength < 0) {
+                value = (int32_t)lroundf(strength);
+            }
+        }
+        // 再试 `GetProperty` + 解析 —— David Murray 的实现走的就是这条。
+        if (value == 0) {
+            // `Get` 规则：+0，不需要释放。
+            value = dBmFromNumber(gNetworkGetProperty(network, CFSTR("RSSI")));
+        }
+
+        CFRelease(network);
+        if (value < 0) {
+            gDiagnosis = kDiagnosisOK;
+            return value;
+        }
+    }
+
+    // 兜底：设备字典里的 `RSSI_CTL_AGR`。
+    //
+    // 粒度比上面那个粗（是控制用的聚合值），所以只当兜底 —— 第二版就是因为只走了
+    // 这条路，才出现「只有固定几个数值在跳」。
+    CFPropertyListRef raw = gCopyDeviceProperty(gDevice, CFSTR("RSSI"));
+    if (raw != NULL) {
+        int32_t value = 0;
+        if (CFGetTypeID(raw) == CFDictionaryGetTypeID()) {
+            value = dBmFromNumber(CFDictionaryGetValue((CFDictionaryRef)raw, CFSTR("RSSI_CTL_AGR")));
+        } else {
+            value = dBmFromNumber(raw);
+        }
+        CFRelease(raw);
+        if (value < 0) {
+            gDiagnosis = kDiagnosisOK;
+            return value;
+        }
+    }
+
+    gDiagnosis = (network == NULL) ? kDiagnosisNoNetwork : kDiagnosisUnreadable;
+    return 0;
 }
 
 const char *helium_wifi_diagnosis(void)

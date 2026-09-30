@@ -1,5 +1,8 @@
 /* Alert++.swift */
 "Error" = "Error";
+"Offset X" = "Offset X";
+"Offset Y" = "Offset Y";
+"Show when Rotating" = "Show when Rotating";
 "OK" = "OK";
 "Cancel" = "Cancel";
 "Text" = "Text";
