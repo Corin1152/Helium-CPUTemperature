@@ -1312,7 +1312,7 @@ static NSString* formattedCellularSignal(int32_t slot, BOOL showUnit, BOOL follo
 extern "C" NSString* HeliumCellularSignalStatus(void)
 {
     if (gSignalSlot < 0 && !gSignalSampling) {
-        cellularSignalScheduleIfStale(0, YES);
+        cellularSignalScheduleIfStale(0);
     }
     return [NSString stringWithUTF8String:helium_cellular_signal_state()];
 }
