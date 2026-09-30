@@ -98,9 +98,6 @@ struct WidgetPreviewsView: View {
         case .textWidget:
             text = widget.config["text"] as? String ?? NSLocalizedString("Unknown", comment:"")
             break;
-        case .weather:
-            text = NSLocalizedString("Weather Preview", comment:"")
-            break;
         case .currentCapacity:
             text = "50\(widget.config["showPercentage"] as? Bool ?? true ? "%" : "")"
         case .chargeSymbol:

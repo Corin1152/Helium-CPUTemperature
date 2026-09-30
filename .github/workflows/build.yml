@@ -99,9 +99,9 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: statusbar-${{ github.run_number }}
-          name: Statusbar 0.05 (build ${{ github.run_number }})
+          name: Statusbar 0.06 (build ${{ github.run_number }})
           body: |
-            基于 Helium 改版。应用名改为 Statusbar，版本从 0.01 起（本次 0.05）。
+            基于 Helium 改版。应用名改为 Statusbar，版本从 0.01 起（本次 0.06）。
 
             界面：只有「首页 / 自定义」两页，设置入口在首页右上角的齿轮。
             部件：原有 9 个 + CPU温度 / CPU占用 / CPU频率 / 蜂窝信号（RSRP）。

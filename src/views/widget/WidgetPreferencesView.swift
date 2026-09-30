@@ -14,7 +14,6 @@ struct WidgetPreferencesView: View {
     @Binding var widgetID: WidgetIDStruct
     
     @State var text: String = ""
-    @State var weatherFormat: String = ""
     @State var intSelection: Int = 0
     @State var intSelection2: Int = 0
     @State var intSelection3: Int = 1
@@ -70,18 +69,29 @@ struct WidgetPreferencesView: View {
             // 连着 Wi-Fi 但读不到 RSSI。把断在哪一步带出来 —— 这是唯一能区分
             // 「框架没加载」「符号改名」「wifid 拒绝连接」的地方。
             return String(format: NSLocalizedString("Wi-Fi connected, RSSI unavailable (%@)", comment:""), payload)
+        case "pending":
+            // Wi-Fi 那次采样还没落地。如实说「还没好」——
+            // 回落成「蜂窝」会让用户以为读的是蜂窝。
+            return NSLocalizedString("Checking…", comment:"")
         default:
             return NSLocalizedString("Unavailable", comment:"")
         }
     }
 
-    /// 只有真的读到数值才算「已知」。`wifi-failed` 要显示成需要留意的颜色。
+    /// 只有真的读到数值才算「已知」。`wifi-failed` 与 `pending` 都要显示成需要留意的颜色。
     private var signalSourceIsKnown: Bool {
         let parts = signalSource.split(separator: ":", maxSplits: 1).map(String.init)
         guard parts.count == 2 else { return false }
-        if parts[0] == "wifi-failed" { return false }
+        if parts[0] == "wifi-failed" || parts[0] == "pending" { return false }
         return Int(parts[1]) != nil
     }
+
+    /// 每秒刷一次「来源」与「状态」。
+    ///
+    /// **必须刷，不能只在 `onAppear` 读一次。** Wi-Fi 那边是异步采样的（而且只有 HUD
+    /// 在画的时候才会被安排），设置页打开的那一瞬间大概率还没采到 —— 读一次的话
+    /// 会永远停在「蜂窝」，而部件本身显示的其实是 Wi-Fi 数值。
+    private let statusRefresh = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     let timeFormats: [String] = [
         "hh:mm",
@@ -338,10 +348,14 @@ struct WidgetPreferencesView: View {
                     }
                 }
                 .onAppear {
-                    // 读一次缓存状态；若还没采过样，这一句会顺带安排一次采样，
-                    // 下次进入这个页面就能看到确定结果。
+                    // 先读一次缓存状态（读的时候会顺带安排一次采样）。
                     cellularStatus = HeliumCellularSignalStatusBridger() ?? ""
-                    signalSource = HeliumSignalSourceBridger() ?? "unavailable"
+                    signalSource = HeliumSignalSourceBridger() ?? "pending"
+                }
+                // 然后每秒刷 —— 采样是异步的，只读一次会停在「还没采到」。
+                .onReceive(statusRefresh) { _ in
+                    cellularStatus = HeliumCellularSignalStatusBridger() ?? ""
+                    signalSource = HeliumSignalSourceBridger() ?? "pending"
                 }
             case .battery:
                 // MARK: Battery Value Type
@@ -421,61 +435,6 @@ struct WidgetPreferencesView: View {
                         boolSelection = widgetID.config["filled"] as? Bool ?? true
                     }
                 }
-            case .weather:
-                ScrollView(.vertical, showsIndicators: false) {
-                    VStack {
-                        HStack {
-                            Text(NSLocalizedString("Location", comment:""))
-                                .foregroundColor(.primary)
-                                .bold()
-                            Spacer()
-                            TextField(NSLocalizedString("Input", comment:""), text: $text)
-                                .frame(maxWidth: 240)
-                                .multilineTextAlignment(.trailing)
-                                .onAppear {
-                                    if let format = widgetID.config["location"] as? String {
-                                        text = format
-                                    } else {
-                                        text = "110000"
-                                    }
-                                }
-                            Button(NSLocalizedString("Get", comment:"")) {
-                                isPresented = true
-                            }
-                            .sheet(isPresented: $isPresented) {
-                                WeatherLocationView(locationID: self.$text)
-                            }
-                        }
-
-                        HStack {
-                            Text(NSLocalizedString("Format", comment:""))
-                                .foregroundColor(.primary)
-                                .bold()
-                            Spacer()
-                            TextField("{i}{n} {nt}°~{dt}° ({t}°)💧{h}%", text: $weatherFormat)
-                                .frame(maxWidth: 240)
-                                .multilineTextAlignment(.trailing)
-                                .onAppear {
-                                    if let format = widgetID.config["format"] as? String {
-                                        weatherFormat = format
-                                    } else {
-                                        weatherFormat = "{i}{n} {nt}°~{dt}° ({t}°)💧{h}%"
-                                    }
-                                }
-                        }
-                        HStack {
-                            Text(NSLocalizedString("Weather Format Now", comment:""))
-                                .multilineTextAlignment(.leading)
-                            Spacer()
-                        }
-                        Text("\n")
-                        HStack {
-                            Text(NSLocalizedString("Weather Format Today", comment:""))
-                                .multilineTextAlignment(.leading)
-                            Spacer()
-                        }
-                    }
-                }
             // default:
             //     Text(NSLocalizedString("No Configurable Aspects", comment:""))
             }
@@ -504,10 +463,7 @@ struct WidgetPreferencesView: View {
         .onChange(of: text) { _ in
             modified = true
         }
-        .onChange(of: weatherFormat) { _ in
-            modified = true
-        }
-        .onChange(of: intSelection) { _ in
+                .onChange(of: intSelection) { _ in
             modified = true
         }
         .onChange(of: intSelection2) { _ in
@@ -588,18 +544,6 @@ struct WidgetPreferencesView: View {
         case .chargeSymbol:
             // MARK: Charge Symbol Fill Handling
             widgetStruct.config["filled"] = boolSelection
-        case .weather:
-            // MARK: Weather Handling
-            if text == "" {
-                widgetStruct.config["location"] = nil
-            } else {
-                widgetStruct.config["location"] = text
-            }
-            if weatherFormat == "" {
-                widgetStruct.config["format"] = nil
-            } else {
-                widgetStruct.config["format"] = weatherFormat
-            }
         // default:
         //     return;
         }
@@ -607,57 +551,6 @@ struct WidgetPreferencesView: View {
         widgetManager.updateWidgetConfig(widgetSet: widgetSet, id: widgetID, newID: widgetStruct)
         widgetID.config = widgetStruct.config
         modified = false
-    }
-}
-
-struct WeatherLocationView: View {
-    @State var searchString = ""
-    @Binding var locationID: String
-    @Environment(\.presentationMode) var presentationMode: Binding<PresentationMode>
-
-    @State var locations: [Location] = []
-    
-    var body: some View {
-        NavigationView{
-            VStack {
-                SearchBarUIView(text: $searchString, search: search, placeHolder: NSLocalizedString("Input Location Name", comment:""))
-                Spacer()
-                List(locations) {location in
-                    ListCell(item: location)
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            locationID = location.id
-                            presentationMode.wrappedValue.dismiss()
-                        }
-                }
-                .listStyle(PlainListStyle())
-                .padding(.vertical, 0)
-                .navigationBarTitle(Text(NSLocalizedString("Get Location ID", comment:"")))
-                .resignKeyboardOnDragGesture()
-            }
-        }
-    }
-
-    func search() {
-        if !searchString.isEmpty {
-            let dateLocale = UserDefaults.standard.string(forKey: "dateLocale", forPath: USER_DEFAULTS_PATH) ?? "en_US"
-            let apiKey = UserDefaults.standard.string(forKey: "apiKey", forPath: USER_DEFAULTS_PATH) ?? ""
-            let data = WeatherUtils.fetchLocationID(forName:searchString, apiKey:apiKey, dateLocale:dateLocale)
-            let json = try! JSONSerialization.jsonObject(with: data!, options: []) as! Dictionary<String, Any>
-            if json["code"] as? String == "200" {
-                let array = json["location"] as! [Dictionary<String, Any>]
-                for item in array {
-                    let name = item["name"] as! String
-                    let id = item["id"] as! String
-                    let country = item["country"] as! String
-                    let adm1 = item["adm1"] as! String
-                    let adm2 = item["adm2"] as! String
-                    let lat = item["lat"] as! String
-                    let lon = item["lon"] as! String
-                    locations.append(Location(id: id, name: name, country: country, adm1: adm1, adm2: adm2, lat: lat, lon: lon))
-                }
-            }
-        }
     }
 }
 

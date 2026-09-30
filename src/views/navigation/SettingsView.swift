@@ -19,7 +19,7 @@ struct SettingsView: View {
     ///
     /// 用 `presentationMode` 而不是 `@Environment(\.dismiss)`：后者是 iOS 15 才有的，
     /// 而本工程的最低目标是 14.0（Makefile 的 `TARGET := ...:14.0`）。
-    /// 仓库里其它地方（`WeatherLocationView`）用的也是这个。
+    /// 仓库里其它地方用的也是这个。
     @Environment(\.presentationMode) var presentationMode
 
     var body: some View {

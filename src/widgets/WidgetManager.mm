@@ -16,7 +16,6 @@
 #import <IOKit/IOKitLib.h>
 #import "../extensions/LunarDate.h"
 #import "../extensions/FontUtils.h"
-#import "../extensions/WeatherUtils.h"
 
 // Thanks to: https://github.com/lwlsw/NetworkSpeed13
 
@@ -1323,12 +1322,26 @@ extern "C" NSString* HeliumCellularSignalStatus(void)
 /// 退回蜂窝 —— 用户看到的是「信号一直不变」，看不出原因。
 extern "C" NSString* HeliumSignalSource(void)
 {
+    // 设置页刚打开时可能一次都还没采过样（Wi-Fi 那边是异步的，而且只有 HUD 在画
+    // 的时候才会被安排）。这里顺手安排一次 —— 不然下面会回落成「蜂窝」，
+    // 而那是**错的**：用户明明在 Wi-Fi 上。
+    if (gWiFiStamp == 0) {
+        wifiSignalScheduleIfStale();
+    }
+
     if (gWiFiAssociated && gWiFiRssiDbm < 0) {
         return [NSString stringWithFormat:@"wifi:%d", gWiFiRssiDbm];
     }
     if (gWiFiAssociated) {
         return [NSString stringWithFormat:@"wifi-failed:%s", helium_wifi_diagnosis()];
     }
+
+    // Wi-Fi 那次采样还没落地。**如实说「还没好」，不要回落成「蜂窝」** ——
+    // 之前就是这一步让「明明显示的是 Wi-Fi 数值、来源却写着蜂窝」。
+    if (gWiFiStamp == 0) {
+        return @"pending";
+    }
+
     if (gSignalSlot >= 0 && gSignalRSRPDbm < 0) {
         return [NSString stringWithFormat:@"cellular:%d", gSignalRSRPDbm];
     }
@@ -1422,7 +1435,6 @@ static NSString* formattedChargingSymbol(BOOL filled)
  6 = Text
  7 = Battery Percentage
  8 = Charging Symbol
- 9 = Weather
  10 = CPU Temp (SoC die temperature via IOReport)
 
  TODO:
@@ -1490,17 +1502,6 @@ void formatParsedInfo(NSDictionary *parsedInfo, NSInteger parsedID, NSMutableAtt
                     imageWithTintColor:textColor
                 ];
                 [mutableString appendAttributedString:[NSAttributedString attributedStringWithAttachment:imageAttachment]];
-            }
-            break;
-        case 9:
-            {
-                // Weather
-                NSString *location = [parsedInfo valueForKey:@"location"];
-                NSString *format = [parsedInfo valueForKey:@"format"];
-                NSDictionary *now = [WeatherUtils fetchNowWeatherForLocation: location apiKey:apiKey dateLocale:dateLocale];
-                NSDictionary *today = [WeatherUtils fetchTodayWeatherForLocation: location apiKey:apiKey dateLocale:dateLocale];
-                widgetString = [WeatherUtils formatNowResult:now format:format];
-                widgetString = [WeatherUtils formatTodayResult:today format:widgetString];
             }
             break;
         case 10:

@@ -24,7 +24,6 @@
 "UNKNOWN" = "UNKNOWN";
 "Release" = "Release";
 "Date Locale" = "Date Locale";
-"Weather Api key" = "QWeather Api key";
 "Hide Save Confirmation Popup" = "Hide Save Confirmation Popup";
 "Display Debug Border" = "Display Debug Border";
 "Use Adaptive Colors" = "Use Adaptive Colors";
@@ -116,14 +115,11 @@
 "No Configurable Aspects" = "No Configurable Aspects";
 "Save Changes" = "Save Changes";
 "Would you like to save changes to the widget?" = "Would you like to save changes to the widget?";
-"Weather Format Now" = "Now Weather Format Explanation:\n{i} Weather Icon\t\t\t{n} Weather Text\n{t} Current Temperature\t{h} Humidity\n{w} Wind Direction\t\t{wp} Wind Power\n{bt} Body Temperature\t{pc} Precipitation\n{ps} Pressure\t\t\t\t{v} Visibility\n{c} Cloud Cover";
-"Weather Format Today" = "Today Weather Format Explanation:\n{di} Daytime Weather Icon\n{dn} Daytime Weather Text\n{dt} Daytime Temperature\n{dw} Daytime Wind Direction\n{dwp} Daytime Wind Power\n{ni} Nighttime Weather Icon\n{nn} Nighttime Weather Text\n{nt} Nighttime Temperature\n{nw} Nighttime Wind Direction\n{nwp} Nighttime Wind Power\n{tpc} Today Precipitation\n{tuv} Today UV Index\n{th} Today Humidity\n{tps} Today Pressure\n{tv} Today Visibility\n{tc} Today Cloud Cover";
 "Format" = "Format";
 
 /* WidgetPreviewsView.swift */
 "ERROR" = "ERROR";
 "Unknown" = "Unknown";
-"Weather Preview" = "🌤Sun 15°~20° (20°)💧54%";
 
 /* EditWidgetSetView.swift */
 "Enable" = "Enable Widget Set";
@@ -197,7 +193,6 @@
 "Example" = "Example";
 "Battery Capacity" = "Battery Capacity";
 "Charging Symbol" = "Charging Symbol";
-"Weather" = "Weather";
 "CPU Temperature" = "CPU Temperature";
 "CPU Usage" = "CPU Usage";
 "CPU Frequency" = "CPU Frequency";

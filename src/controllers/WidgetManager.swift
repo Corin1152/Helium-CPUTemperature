@@ -20,7 +20,6 @@ enum WidgetModule: Int, CaseIterable {
     case temperature = 3
 
     case textWidget = 6
-    case weather = 9
 
     // CPU/SoC die temperature, read through IOReport (see WidgetManager.mm)
     case cpuTemperature = 10
@@ -468,8 +467,6 @@ class WidgetDetails {
             return (NSLocalizedString("Battery Capacity", comment: ""), "50%")
         case .chargeSymbol:
             return (NSLocalizedString("Charging Symbol", comment: ""), "⚡️")
-        case .weather:
-            return (NSLocalizedString("Weather", comment: ""), "🌤 20℃")
         case .cpuTemperature:
             return (NSLocalizedString("CPU Temperature", comment: ""), "42.50ºC")
         case .cpuUsage:

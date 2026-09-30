@@ -5,7 +5,7 @@
 一份**已经改好代码的完整 Helium 源码**，在原有基础上新增了四个状态栏悬浮部件：
 「CPU温度」（编号 10）、「CPU占用」（编号 11）、「CPU频率」（编号 12）、「蜂窝信号」（编号 13）。
 
-版本：显示版本 **`0.04`**（`CFBundleShortVersionString`），构建号 `0.0.4`（`CFBundleVersion`）。
+版本：显示版本 **`0.05`**（`CFBundleShortVersionString`），构建号 `0.0.5`（`CFBundleVersion`）。
 **应用名改为 `Statusbar`**（`CFBundleDisplayName` / `CFBundleName`），首页标题同步。
 
 界面：只有**两页** —— 首页与自定义；**设置入口在首页右上角的齿轮**（sheet 弹出，不再是独立分页）。
@@ -116,21 +116,42 @@ static func hasCommCenterSPI() -> Bool {
 
 符号名取自 MobileWiFi 的公开头文件（`WiFiDeviceClient.h` / `WiFiManager.h`），不是猜的。
 
-### ⚠️ 这个功能默认关闭，而且是实验性的
+### ⚠️ 默认关闭，而且是实验性的
 
-第一版**默认开启**，结果在真机上「启用后所有部件一起不显示」—— 因为 Helium 的每个部件
-都由同一个进程绘制，而 MobileWiFi 那条链把进程带下去了。
+这个功能崩过两次，每次都把**整个 HUD** 带走（Helium 的每个部件都由同一个进程绘制，
+所以一个坏调用不是「一个部件坏了」，是全部）。三个根因最后都是从
+[ProcursusTeam/netctl](https://github.com/ProcursusTeam/netctl) 这个真实可用的
+iOS 工具里读出来的：
 
-现在改成三层防护：
+**① `WiFiManagerClientGetDevice` 会段错误。** netctl 的 `wifi/wifi.m` 里写着：
+
+    // WiFiManagerClientGetDevice(WiFiManagerRef) segfaults
+    CFArrayRef devices = WiFiManagerClientCopyDevices(manager);
+    client = (WiFiDeviceClientRef)CFArrayGetValueAtIndex(devices, 0);
+
+第一版用的正是那个会崩的函数。现在改用 `CopyDevices` + `CFArrayGetValueAtIndex`。
+
+**② 缺两条权限。** netctl 的 entitlements 里有 `com.apple.wifi.manager-access`
+与 `com.apple.private.skip-library-validation`（后者是加载非本签名私有框架用的）。
+本工程原来两条都没有 —— 只有公开的 `networking.wifi-info`，那是给
+`CNCopyCurrentNetworkInfo` 用的，跟 MobileWiFi 不是一回事。
+
+**③ RSSI 返回的是字典，不是数字。**
+
+    CFDictionaryRef data = WiFiDeviceClientCopyProperty(client, CFSTR("RSSI"));
+    CFNumberRef rssi = CFDictionaryGetValue(data, CFSTR("RSSI_CTL_AGR"));
+
+第一版按 `CFNumber` 解析，类型对不上于是永远读不到 —— 这就是「已连 Wi-Fi 却显示蜂窝」
+的原因。现在两种形状都处理。
+
+### 保留的两层防护
 
 1. **默认关**（`followNetwork` 默认 `NO`），用户显式打开才走这条路；
-2. **关联判断改用 `getifaddrs`**（公开 API），只有确实连着 Wi-Fi 才去碰私有框架 ——
-   不在 Wi-Fi 上时根本不进 MobileWiFi；
-3. **Wi-Fi 采样走独立队列**，且整个进程**最多真正尝试一次**（latch）——
-   那条路一旦有问题，每秒重试只会每秒出一次问题。
+2. **关联判断用 `getifaddrs`**（公开 API），不在 Wi-Fi 上时**根本不进 MobileWiFi**；
+3. Wi-Fi 采样走**独立队列**，且整个进程**最多真正尝试一次**（latch）。
 
 设置页的「来源」行会在失败时显示 `已连 Wi-Fi，但读不到 RSSI（原因）`，
-原因是 `dlopen-failed` / `symbol-missing` / `create-failed` / `get-device-failed` /
+原因是 `dlopen-failed` / `symbol-missing` / `create-failed` / `no-device` /
 `rssi-unreadable` 之一 —— 这是唯一能区分「框架没加载」「符号改名」「wifid 拒绝连接」
 的地方。
 
