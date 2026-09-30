@@ -1169,10 +1169,14 @@ static NSString* formattedCPUFrequency(NSInteger unit)
 */
 
 #import "CellularSignalProbe.h"
+#import "WiFiSignalProbe.h"
 
 // dBm; 0 means "no reading yet". RSRP is always negative, so 0 is a safe
 // sentinel and needs no separate flag.
 static int32_t gSignalRSRPDbm = 0;
+// Wi-Fi 那一侧的同一套东西。与蜂窝共用缓存时间戳，因为两者是一起采的。
+static int32_t gWiFiRssiDbm = 0;
+static BOOL gWiFiAssociated = NO;
 // The slot the cached value came from. A widget configured for a different slot
 // must not show it, so the cache is keyed on this and a mismatch reports
 // "no reading" until the new sample lands.
@@ -1200,7 +1204,8 @@ static dispatch_queue_t cellularSignalQueue(void)
 
 /// Kick off a sample if the cache is stale (or belongs to another slot).
 /// Returns immediately.
-static void cellularSignalScheduleIfStale(int32_t slot)
+/// `followNetwork`: 要不要在连着 Wi-Fi 时改用 Wi-Fi 的 RSSI。
+static void cellularSignalScheduleIfStale(int32_t slot, BOOL followNetwork)
 {
     CFAbsoluteTime now = CFAbsoluteTimeGetCurrent();
     if (gSignalSampling) {
@@ -1212,8 +1217,22 @@ static void cellularSignalScheduleIfStale(int32_t slot)
 
     gSignalSampling = YES;
     dispatch_async(cellularSignalQueue(), ^{
-        int32_t value = helium_cellular_rsrp_dbm(slot);
-        gSignalRSRPDbm = value;
+        // 蜂窝那边每次都问：它同时是「有没有 CommCenter 权限」的依据。
+        int32_t cell = helium_cellular_rsrp_dbm(slot);
+
+        // Wi-Fi 只在真的需要时才问，省掉一次 XPC。
+        int32_t wifi = 0;
+        BOOL associated = NO;
+        if (followNetwork) {
+            associated = helium_wifi_is_associated();
+            if (associated) {
+                wifi = helium_wifi_rssi_dbm();
+            }
+        }
+
+        gSignalRSRPDbm = cell;
+        gWiFiAssociated = associated;
+        gWiFiRssiDbm = wifi;
         gSignalSlot = slot;
         gSignalStamp = CFAbsoluteTimeGetCurrent();
         gSignalSampling = NO;
@@ -1221,9 +1240,19 @@ static void cellularSignalScheduleIfStale(int32_t slot)
 }
 
 /// `slot`: 0 follows the SIM the system is using for data, 1/2 pick explicitly.
-static NSString* formattedCellularSignal(int32_t slot, BOOL showUnit)
+/// `followNetwork`: 连着 Wi-Fi 且读到 RSSI 时改用 Wi-Fi 的数值。
+static NSString* formattedCellularSignal(int32_t slot, BOOL showUnit, BOOL followNetwork)
 {
-    cellularSignalScheduleIfStale(slot);
+    cellularSignalScheduleIfStale(slot, followNetwork);
+
+    // 连着 Wi-Fi **并且真的读到了 RSSI** 才切过去。
+    //
+    // 「关联了但读不到 RSSI」时不切换：那样会明明在 Wi-Fi 上却显示蜂窝数值。
+    // 同时它也意味着 MobileWiFi 这条路走不通 —— 静默地退化成原来的蜂窝小部件，
+    // 比一直显示 `--` 有用。
+    if (followNetwork && gWiFiAssociated && gWiFiRssiDbm < 0) {
+        return signalNumber(gWiFiRssiDbm, showUnit);
+    }
 
     // The cache is only valid for the slot it came from — otherwise switching
     // the widget from slot 1 to slot 2 would briefly show slot 1's signal.
@@ -1231,8 +1260,12 @@ static NSString* formattedCellularSignal(int32_t slot, BOOL showUnit)
     if (value >= 0) {
         return @"--";
     }
+    return signalNumber(value, showUnit);
+}
 
-    NSString *number = [NSString stringWithFormat:@"%d", value];
+static NSString* signalNumber(int32_t dbm, BOOL showUnit)
+{
+    NSString *number = [NSString stringWithFormat:@"%d", dbm];
     return showUnit ? [number stringByAppendingString:@" dBm"] : number;
 }
 
@@ -1244,9 +1277,27 @@ static NSString* formattedCellularSignal(int32_t slot, BOOL showUnit)
 extern "C" NSString* HeliumCellularSignalStatus(void)
 {
     if (gSignalSlot < 0 && !gSignalSampling) {
-        cellularSignalScheduleIfStale(0);
+        cellularSignalScheduleIfStale(0, YES);
     }
     return [NSString stringWithUTF8String:helium_cellular_signal_state()];
+}
+
+/// 当前这一格显示的是哪一路信号，给设置页的状态行用。
+///
+/// 返回 `"wifi:<dBm>"` / `"cellular:<dBm>"` / `"unavailable"`。
+///
+/// **这一行是必要的，不是装饰**：Wi-Fi 与蜂窝的读数范围重叠（都在 -40…-100 之间），
+/// 光看数字分不出是哪一路；而 MobileWiFi 那条路一旦读不到，这个部件会**静默地**
+/// 退回蜂窝 —— 用户看到的是「信号一直不变」，看不出是 Wi-Fi 那条路没通。
+extern "C" NSString* HeliumSignalSource(void)
+{
+    if (gWiFiAssociated && gWiFiRssiDbm < 0) {
+        return [NSString stringWithFormat:@"wifi:%d", gWiFiRssiDbm];
+    }
+    if (gSignalSlot >= 0 && gSignalRSRPDbm < 0) {
+        return [NSString stringWithFormat:@"cellular:%d", gSignalRSRPDbm];
+    }
+    return @"unavailable";
 }
 
 #pragma mark - Battery Widget
@@ -1438,10 +1489,11 @@ void formatParsedInfo(NSDictionary *parsedInfo, NSInteger parsedID, NSMutableAtt
             );
             break;
         case 13:
-            // Cellular Signal (RSRP)
+            // Signal: Wi-Fi RSSI when associated, cellular RSRP otherwise.
             widgetString = formattedCellularSignal(
                 [parsedInfo valueForKey:@"signalSlot"] ? [[parsedInfo valueForKey:@"signalSlot"] intValue] : 0,
-                [parsedInfo valueForKey:@"showUnit"] ? [[parsedInfo valueForKey:@"showUnit"] boolValue] : YES
+                [parsedInfo valueForKey:@"showUnit"] ? [[parsedInfo valueForKey:@"showUnit"] boolValue] : YES,
+                [parsedInfo valueForKey:@"followNetwork"] ? [[parsedInfo valueForKey:@"followNetwork"] boolValue] : YES
             );
             break;
         default:

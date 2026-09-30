@@ -2,6 +2,14 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<!--
+	  Wi-Fi 接收功率（RSSI）走 MobileWiFi 私有框架与 wifid 通信。
+	  这条权限是标准的「Access Wi-Fi Information」能力（CPU-X 也带着它）。
+	  不确定 wifid 是否校验它 —— 加了不亏：**读不到 RSSI 时部件会静默退回蜂窝**，
+	  所以失败是可以接受的降级，但能读到就别因为权限被拦。
+	-->
+	<key>com.apple.developer.networking.wifi-info</key>
+	<true/>
 	<key>com.apple.AXMediaUtilitiesService-access</key>
 	<true/>
 	<!--

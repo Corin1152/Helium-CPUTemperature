@@ -96,6 +96,11 @@
 "Busiest Core" = "Busiest Core";
 "Decimal Places" = "Decimal Places";
 "Frequency Unit" = "Frequency Unit";
+"Signal" = "Signal";
+"Source" = "Source";
+"Show Wi-Fi signal when connected" = "Show Wi-Fi signal when connected";
+"Wi-Fi %d dBm" = "Wi-Fi %d dBm";
+"Cellular %d dBm" = "Cellular %d dBm";
 "Status" = "Status";
 "SIM Slot" = "SIM Slot";
 "Auto" = "Auto";
@@ -194,7 +199,6 @@
 "CPU Temperature" = "CPU Temperature";
 "CPU Usage" = "CPU Usage";
 "CPU Frequency" = "CPU Frequency";
-"Cellular Signal" = "Cellular Signal";
 "Diagnostics" = "Diagnostics";
 "Temperature Diagnostics" = "Temperature Diagnostics";
 "Shows which temperature sources this device actually exposes. The same report is written to /var/mobile/Documents/HeliumTempDiag.txt" = "Shows which temperature sources this device actually exposes. The same report is written to /var/mobile/Documents/HeliumTempDiag.txt";

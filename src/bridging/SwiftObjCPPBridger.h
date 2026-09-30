@@ -22,3 +22,6 @@ NSString* HeliumTemperatureDiagnosticsBridger();
 /// Surfaced in the widget's preferences screen because a missing CommCenter
 /// entitlement fails silently — the widget would just show "--" forever.
 NSString* HeliumCellularSignalStatusBridger();
+
+/// 当前显示的是哪一路信号：`"wifi:<dBm>"` / `"cellular:<dBm>"` / `"unavailable"`。
+NSString* HeliumSignalSourceBridger();

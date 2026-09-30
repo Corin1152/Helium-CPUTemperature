@@ -477,7 +477,7 @@ class WidgetDetails {
         case .cpuFrequency:
             return (NSLocalizedString("CPU Frequency", comment: ""), "2.39 GHz")
         case .cellularSignal:
-            return (NSLocalizedString("Cellular Signal", comment: ""), "-95 dBm")
+            return (NSLocalizedString("Signal", comment: ""), "-95 dBm")
         }
     }
     

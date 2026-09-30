@@ -97,6 +97,11 @@
 "Busiest Core" = "最高核心";
 "Decimal Places" = "小数位";
 "Frequency Unit" = "频率单位";
+"Signal" = "信号";
+"Source" = "来源";
+"Show Wi-Fi signal when connected" = "连接 Wi-Fi 时显示 Wi-Fi 信号";
+"Wi-Fi %d dBm" = "Wi-Fi %d dBm";
+"Cellular %d dBm" = "蜂窝 %d dBm";
 "Status" = "状态";
 "SIM Slot" = "SIM 卡槽";
 "Auto" = "自动";
@@ -198,7 +203,6 @@
 "CPU Temperature" = "CPU温度";
 "CPU Usage" = "CPU占用";
 "CPU Frequency" = "CPU频率";
-"Cellular Signal" = "蜂窝信号";
 "Diagnostics" = "诊断";
 "Temperature Diagnostics" = "温度诊断";
 "Shows which temperature sources this device actually exposes. The same report is written to /var/mobile/Documents/HeliumTempDiag.txt" = "显示本机实际可用的温度数据来源。同样的报告会写入 /var/mobile/Documents/HeliumTempDiag.txt";

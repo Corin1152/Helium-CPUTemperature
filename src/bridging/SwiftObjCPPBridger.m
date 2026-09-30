@@ -47,3 +47,11 @@ NSString* HeliumCellularSignalStatusBridger()
 {
     return HeliumCellularSignalStatus();
 }
+
+// Implemented in widget/WidgetManager.mm
+extern NSString* HeliumSignalSource(void);
+
+NSString* HeliumSignalSourceBridger()
+{
+    return HeliumSignalSource();
+}

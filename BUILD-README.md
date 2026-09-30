@@ -5,7 +5,7 @@
 一份**已经改好代码的完整 Helium 源码**，在原有基础上新增了四个状态栏悬浮部件：
 「CPU温度」（编号 10）、「CPU占用」（编号 11）、「CPU频率」（编号 12）、「蜂窝信号」（编号 13）。
 
-版本：显示版本 **`0.02`**（`CFBundleShortVersionString`），构建号 `0.0.2`（`CFBundleVersion`）。
+版本：显示版本 **`0.03`**（`CFBundleShortVersionString`），构建号 `0.0.3`（`CFBundleVersion`）。
 **应用名改为 `Statusbar`**（`CFBundleDisplayName` / `CFBundleName`），首页标题同步。
 
 界面：只有**两页** —— 首页与自定义；**设置入口在首页右上角的齿轮**（sheet 弹出，不再是独立分页）。
@@ -77,6 +77,72 @@ static func hasCommCenterSPI() -> Bool {
 | `src/views/widget/WidgetPreferencesView.swift` | 状态行 + 卡槽 + 单位；保存逻辑 |
 | `src/views/widget/WidgetPreviewsView.swift` | 预览分支 |
 | `layout/.../{en,zh-Hans}.lproj/Localizable.strings` | 各 +10 条 |
+
+> `Makefile` 不用改：新 `.mm` 由 `widgets/*.mm` 的 wildcard 自动收。
+
+---
+
+## 追加（2026-09-30）：信号部件支持 Wi-Fi
+
+「蜂窝信号」改名「信号」：连着 Wi-Fi 时显示 **Wi-Fi 接收功率（RSSI）**，断开后自动回到
+**蜂窝 RSRP**。可以用设置项关掉，关掉后只看蜂窝。
+
+### 刷新频率（三个部件的实际节拍）
+
+| 部件 | 采样间隔 | 界面重绘 |
+| --- | --- | --- |
+| CPU 占用 | **0.25 秒** | 见下 |
+| CPU 频率 | **3 秒** | 见下 |
+| 信号（RSRP / Wi-Fi） | **3 秒** | 见下 |
+
+界面重绘由「部件组」的 **Update Interval** 控制，默认 **1 秒**（编辑部件组页面里的滑杆，
+范围 0.01–86400）。所以：
+
+- CPU 占用：数值每 0.25 秒变一次，但**最快每秒才画一次**；
+- CPU 频率与信号：数值每 3 秒变一次，界面每秒重绘也只会看到同一个数。
+
+采样间隔是代码里的常量（`CPU_USAGE_CACHE_SECONDS` / `CPU_FREQUENCY_SAMPLE_SECONDS` /
+`CELLULAR_SIGNAL_SAMPLE_SECONDS`），**不在界面上开放** —— 频率那个 3 秒是刻意的：
+测频靠一段 15–20 ms 的满速忙循环，采太勤等于自己给自己造负载。
+
+### Wi-Fi RSSI 怎么取的
+
+走 MobileWiFi 私有框架（dlopen，不链接）：
+
+    WiFiManagerClientCreate(NULL, 0)
+      -> WiFiManagerClientGetDevice(manager)          // 与 wifid 的会话，一直留着
+      -> WiFiDeviceClientCopyCurrentNetwork(device)   // 非空 = 已关联
+      -> WiFiDeviceClientCopyProperty(device, CFSTR("RSSI"))
+
+符号名取自 MobileWiFi 的公开头文件（`WiFiDeviceClient.h` / `WiFiManager.h`），不是猜的。
+
+### 「关联了但读不到 RSSI」时不切换
+
+那种情况如果切成蜂窝数值，就会出现「明明在 Wi-Fi 上却显示蜂窝信号」。所以规则是
+**连着 Wi-Fi 且真的读到 RSSI 才切**；读不到就静默退回蜂窝 —— 退化成原来的
+纯蜂窝小部件，比一直显示 `--` 有用。
+
+而这也正是部件设置页里那行「来源」存在的理由：Wi-Fi 与蜂窝的读数范围重叠
+（都在 -40…-100 之间），光看数字分不出是哪一路；MobileWiFi 那条路一旦不通，
+用户看到的只是「信号一直不变」，看不出原因。
+
+### 权限
+
+`ent.plist` 加了 `com.apple.developer.networking.wifi-info`（标准的
+「Access Wi-Fi Information」能力，CPU-X 也带着它）。**不确定 wifid 是否校验它** ——
+加了不亏，读不到时会退回蜂窝。
+
+### 改动文件
+
+| 文件 | 改动 |
+| --- | --- |
+| `src/widgets/WiFiSignalProbe.{h,mm}` | **新增**：MobileWiFi 运行时解析 |
+| `src/widgets/WidgetManager.mm` | 采样器同时采蜂窝与 Wi-Fi；新增 `HeliumSignalSource()` |
+| `src/bridging/SwiftObjCPPBridger.{h,m}` | 新增 `HeliumSignalSourceBridger()` |
+| `src/controllers/WidgetManager.swift` | 显示名「蜂窝信号」→「信号」 |
+| `src/views/widget/WidgetPreferencesView.swift` | 新增「来源」行与「连接 Wi-Fi 时显示 Wi-Fi 信号」开关 |
+| `ent.plist` | +`com.apple.developer.networking.wifi-info`（69 条） |
+| 两份 `Localizable.strings` | +5 条 |
 
 > `Makefile` 不用改：新 `.mm` 由 `widgets/*.mm` 的 wildcard 自动收。
 

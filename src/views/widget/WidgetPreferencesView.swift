@@ -26,6 +26,12 @@ struct WidgetPreferencesView: View {
     /// 蜂窝信号探针的状态（"pending" / "ok" / "unavailable"），见 SwiftObjCPPBridger.h。
     @State private var cellularStatus: String = ""
 
+    /// 信号小部件当前显示的是哪一路（"wifi:<dBm>" / "cellular:<dBm>" / "unavailable"）。
+    @State private var signalSource: String = "unavailable"
+
+    /// 信号小部件是否跟随网络在 Wi-Fi 与蜂窝之间切换。
+    @State private var followNetwork: Bool = true
+
     /// 状态行的文案。`unavailable` 的说明刻意把「权限」写进去 —— 那是它最常见的原因。
     private var cellularStatusText: String {
         switch cellularStatus {
@@ -41,7 +47,30 @@ struct WidgetPreferencesView: View {
     private var cellularStatusIsOK: Bool {
         return cellularStatus == "ok"
     }
-    
+
+    /// 当前信号来源。
+    ///
+    /// 带上数值一起显示，是因为**来源错了比读不到更难发现**：两个网络都在 -70 附近时，
+    /// 数字本身看不出问题。
+    private var signalSourceText: String {
+        let parts = signalSource.split(separator: ":", maxSplits: 1).map(String.init)
+        guard parts.count == 2, let dbm = Int(parts[1]) else {
+            return NSLocalizedString("Unavailable", comment:"")
+        }
+        switch parts[0] {
+        case "wifi":
+            return String(format: NSLocalizedString("Wi-Fi %d dBm", comment:""), dbm)
+        case "cellular":
+            return String(format: NSLocalizedString("Cellular %d dBm", comment:""), dbm)
+        default:
+            return NSLocalizedString("Unavailable", comment:"")
+        }
+    }
+
+    private var signalSourceIsKnown: Bool {
+        return signalSource != "unavailable"
+    }
+
     let timeFormats: [String] = [
         "hh:mm",
         "hh:mm a",
@@ -237,18 +266,37 @@ struct WidgetPreferencesView: View {
                     }
                 }
             case .cellularSignal:
-                // MARK: Cellular Signal Options
+                // MARK: Signal Options
                 VStack {
+                    // 当前显示的是哪一路。
+                    //
+                    // 这一行不是装饰：Wi-Fi 与蜂窝的读数范围重叠（都在 -40…-100 之间），
+                    // 光看数字分不出是哪一路。而且 MobileWiFi 那条路一旦读不到，部件会
+                    // **静默地**退回蜂窝 —— 用户看到的是「信号一直不变」，看不出原因。
+                    HStack {
+                        Text(NSLocalizedString("Source", comment:"")).foregroundColor(.primary).bold()
+                        Spacer()
+                        Text(signalSourceText)
+                            .foregroundColor(signalSourceIsKnown ? .secondary : .orange)
+                    }
                     // 权限/可用性状态行。
                     //
-                    // 这一行不是装饰：没有 CommCenter 权限时，取数调用不抛异常、不打日志，
-                    // 只是永远拿不到值 —— 小部件会一直显示 `--`。那一行 `--` 到底是
-                    // 「无服务」还是「没权限」，只有这里能区分。
+                    // 没有 CommCenter 权限时，取数调用不抛异常、不打日志，只是永远拿不到
+                    // 值 —— 小部件会一直显示 `--`。那一行 `--` 到底是「无服务」还是
+                    // 「没权限」，只有这里能区分。
                     HStack {
                         Text(NSLocalizedString("Status", comment:"")).foregroundColor(.primary).bold()
                         Spacer()
                         Text(cellularStatusText)
                             .foregroundColor(cellularStatusIsOK ? .secondary : .orange)
+                    }
+                    Toggle(isOn: $followNetwork) {
+                        Text(NSLocalizedString("Show Wi-Fi signal when connected", comment:""))
+                            .foregroundColor(.primary)
+                            .bold()
+                    }
+                    .onAppear {
+                        followNetwork = widgetID.config["followNetwork"] as? Bool ?? true
                     }
                     HStack {
                         Text(NSLocalizedString("SIM Slot", comment:"")).foregroundColor(.primary).bold()
@@ -276,6 +324,7 @@ struct WidgetPreferencesView: View {
                     // 读一次缓存状态；若还没采过样，这一句会顺带安排一次采样，
                     // 下次进入这个页面就能看到确定结果。
                     cellularStatus = HeliumCellularSignalStatusBridger() ?? ""
+                    signalSource = HeliumSignalSourceBridger() ?? "unavailable"
                 }
             case .battery:
                 // MARK: Battery Value Type
@@ -505,9 +554,10 @@ struct WidgetPreferencesView: View {
             // MARK: CPU Frequency Unit Handling
             widgetStruct.config["freqUnit"] = intSelection
         case .cellularSignal:
-            // MARK: Cellular Signal Handling
+            // MARK: Signal Handling
             widgetStruct.config["signalSlot"] = intSelection
             widgetStruct.config["showUnit"] = boolSelection
+            widgetStruct.config["followNetwork"] = followNetwork
         case .battery:
             // MARK: Battery Value Type Handling
             widgetStruct.config["batteryValueType"] = intSelection
