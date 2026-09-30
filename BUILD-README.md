@@ -5,7 +5,7 @@
 一份**已经改好代码的完整 Helium 源码**，在原有基础上新增了四个状态栏悬浮部件：
 「CPU温度」（编号 10）、「CPU占用」（编号 11）、「CPU频率」（编号 12）、「蜂窝信号」（编号 13）。
 
-版本：显示版本 **`0.03`**（`CFBundleShortVersionString`），构建号 `0.0.3`（`CFBundleVersion`）。
+版本：显示版本 **`0.04`**（`CFBundleShortVersionString`），构建号 `0.0.4`（`CFBundleVersion`）。
 **应用名改为 `Statusbar`**（`CFBundleDisplayName` / `CFBundleName`），首页标题同步。
 
 界面：只有**两页** —— 首页与自定义；**设置入口在首页右上角的齿轮**（sheet 弹出，不再是独立分页）。
@@ -115,6 +115,24 @@ static func hasCommCenterSPI() -> Bool {
       -> WiFiDeviceClientCopyProperty(device, CFSTR("RSSI"))
 
 符号名取自 MobileWiFi 的公开头文件（`WiFiDeviceClient.h` / `WiFiManager.h`），不是猜的。
+
+### ⚠️ 这个功能默认关闭，而且是实验性的
+
+第一版**默认开启**，结果在真机上「启用后所有部件一起不显示」—— 因为 Helium 的每个部件
+都由同一个进程绘制，而 MobileWiFi 那条链把进程带下去了。
+
+现在改成三层防护：
+
+1. **默认关**（`followNetwork` 默认 `NO`），用户显式打开才走这条路；
+2. **关联判断改用 `getifaddrs`**（公开 API），只有确实连着 Wi-Fi 才去碰私有框架 ——
+   不在 Wi-Fi 上时根本不进 MobileWiFi；
+3. **Wi-Fi 采样走独立队列**，且整个进程**最多真正尝试一次**（latch）——
+   那条路一旦有问题，每秒重试只会每秒出一次问题。
+
+设置页的「来源」行会在失败时显示 `已连 Wi-Fi，但读不到 RSSI（原因）`，
+原因是 `dlopen-failed` / `symbol-missing` / `create-failed` / `get-device-failed` /
+`rssi-unreadable` 之一 —— 这是唯一能区分「框架没加载」「符号改名」「wifid 拒绝连接」
+的地方。
 
 ### 「关联了但读不到 RSSI」时不切换
 

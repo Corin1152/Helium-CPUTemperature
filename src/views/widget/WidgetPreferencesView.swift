@@ -54,21 +54,32 @@ struct WidgetPreferencesView: View {
     /// 数字本身看不出问题。
     private var signalSourceText: String {
         let parts = signalSource.split(separator: ":", maxSplits: 1).map(String.init)
-        guard parts.count == 2, let dbm = Int(parts[1]) else {
+        guard parts.count == 2 else {
             return NSLocalizedString("Unavailable", comment:"")
         }
+        let payload = parts[1]
         switch parts[0] {
         case "wifi":
+            guard let dbm = Int(payload) else { return NSLocalizedString("Unavailable", comment:"") }
             return String(format: NSLocalizedString("Wi-Fi %d dBm", comment:""), dbm)
         case "cellular":
+            guard let dbm = Int(payload) else { return NSLocalizedString("Unavailable", comment:"") }
             return String(format: NSLocalizedString("Cellular %d dBm", comment:""), dbm)
+        case "wifi-failed":
+            // 连着 Wi-Fi 但读不到 RSSI。把断在哪一步带出来 —— 这是唯一能区分
+            // 「框架没加载」「符号改名」「wifid 拒绝连接」的地方。
+            return String(format: NSLocalizedString("Wi-Fi connected, RSSI unavailable (%@)", comment:""), payload)
         default:
             return NSLocalizedString("Unavailable", comment:"")
         }
     }
 
+    /// 只有真的读到数值才算「已知」。`wifi-failed` 要显示成需要留意的颜色。
     private var signalSourceIsKnown: Bool {
-        return signalSource != "unavailable"
+        let parts = signalSource.split(separator: ":", maxSplits: 1).map(String.init)
+        guard parts.count == 2 else { return false }
+        if parts[0] == "wifi-failed" { return false }
+        return Int(parts[1]) != nil
     }
 
     let timeFormats: [String] = [
@@ -296,8 +307,13 @@ struct WidgetPreferencesView: View {
                             .bold()
                     }
                     .onAppear {
-                        followNetwork = widgetID.config["followNetwork"] as? Bool ?? true
+                        // **默认关**：MobileWiFi 那条路没在真机验证过。默认开启等于把
+                        // 未验证的私有框架调用塞进每个人的 HUD。
+                        followNetwork = widgetID.config["followNetwork"] as? Bool ?? false
                     }
+                    Text(NSLocalizedString("Experimental. Reads Wi-Fi RSSI through a private framework. If the status bar stops updating, turn this off.", comment:""))
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                     HStack {
                         Text(NSLocalizedString("SIM Slot", comment:"")).foregroundColor(.primary).bold()
                         Spacer()

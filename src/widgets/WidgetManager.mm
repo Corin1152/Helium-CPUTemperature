@@ -1177,6 +1177,9 @@ static int32_t gSignalRSRPDbm = 0;
 // Wi-Fi 那一侧的同一套东西。与蜂窝共用缓存时间戳，因为两者是一起采的。
 static int32_t gWiFiRssiDbm = 0;
 static BOOL gWiFiAssociated = NO;
+// Wi-Fi 那一侧自己的节拍 —— 与蜂窝分开，见 wifiSignalScheduleIfStale。
+static CFAbsoluteTime gWiFiStamp = 0;
+static BOOL gWiFiSampling = NO;
 // The slot the cached value came from. A widget configured for a different slot
 // must not show it, so the cache is keyed on this and a mismatch reports
 // "no reading" until the new sample lands.
@@ -1204,8 +1207,7 @@ static dispatch_queue_t cellularSignalQueue(void)
 
 /// Kick off a sample if the cache is stale (or belongs to another slot).
 /// Returns immediately.
-/// `followNetwork`: 要不要在连着 Wi-Fi 时改用 Wi-Fi 的 RSSI。
-static void cellularSignalScheduleIfStale(int32_t slot, BOOL followNetwork)
+static void cellularSignalScheduleIfStale(int32_t slot)
 {
     CFAbsoluteTime now = CFAbsoluteTimeGetCurrent();
     if (gSignalSampling) {
@@ -1217,25 +1219,53 @@ static void cellularSignalScheduleIfStale(int32_t slot, BOOL followNetwork)
 
     gSignalSampling = YES;
     dispatch_async(cellularSignalQueue(), ^{
-        // 蜂窝那边每次都问：它同时是「有没有 CommCenter 权限」的依据。
-        int32_t cell = helium_cellular_rsrp_dbm(slot);
-
-        // Wi-Fi 只在真的需要时才问，省掉一次 XPC。
-        int32_t wifi = 0;
-        BOOL associated = NO;
-        if (followNetwork) {
-            associated = helium_wifi_is_associated();
-            if (associated) {
-                wifi = helium_wifi_rssi_dbm();
-            }
-        }
-
-        gSignalRSRPDbm = cell;
-        gWiFiAssociated = associated;
-        gWiFiRssiDbm = wifi;
+        int32_t value = helium_cellular_rsrp_dbm(slot);
+        gSignalRSRPDbm = value;
         gSignalSlot = slot;
         gSignalStamp = CFAbsoluteTimeGetCurrent();
         gSignalSampling = NO;
+    });
+}
+
+/// Wi-Fi 采样**单独一条队列**。
+///
+/// 第一版把它和蜂窝放在同一条队列上，结果那条链一旦出问题就把两边一起拖住 ——
+/// 而 Helium 的部件都由同一个进程绘制，表现就是「所有部件一起不显示」。
+/// 分开之后，即使 Wi-Fi 那边卡死，蜂窝的采样照常，其他部件也不受影响。
+static dispatch_queue_t wifiSignalQueue(void)
+{
+    static dispatch_once_t once;
+    static dispatch_queue_t queue = NULL;
+    dispatch_once(&once, ^{
+        queue = dispatch_queue_create("com.leemin.helium.wifisignal", DISPATCH_QUEUE_SERIAL);
+    });
+    return queue;
+}
+
+static void wifiSignalScheduleIfStale(void)
+{
+    CFAbsoluteTime now = CFAbsoluteTimeGetCurrent();
+    if (gWiFiSampling) {
+        return;
+    }
+    if (gWiFiStamp != 0 && (now - gWiFiStamp) < CELLULAR_SIGNAL_SAMPLE_SECONDS) {
+        return;
+    }
+
+    gWiFiSampling = YES;
+    dispatch_async(wifiSignalQueue(), ^{
+        // 先问「连没连」（`getifaddrs`，公开 API）。只有确实连着才去碰私有框架 ——
+        // 不在 Wi-Fi 上时这个函数根本不进 MobileWiFi。
+        BOOL associated = helium_wifi_is_associated();
+        int32_t rssi = 0;
+        if (associated) {
+            // 内部带 latch：整个进程最多真正尝试一次。
+            rssi = helium_wifi_rssi_dbm();
+        }
+        gWiFiAssociated = associated;
+        gWiFiRssiDbm = rssi;
+        gWiFiStamp = CFAbsoluteTimeGetCurrent();
+        gWiFiSampling = NO;
     });
 }
 
@@ -1250,7 +1280,11 @@ static NSString* signalNumber(int32_t dbm, BOOL showUnit)
 /// `followNetwork`: 连着 Wi-Fi 且读到 RSSI 时改用 Wi-Fi 的数值。
 static NSString* formattedCellularSignal(int32_t slot, BOOL showUnit, BOOL followNetwork)
 {
-    cellularSignalScheduleIfStale(slot, followNetwork);
+    // 蜂窝照常采 —— 它是这个部件的基础，也是「有没有 CommCenter 权限」的依据。
+    cellularSignalScheduleIfStale(slot);
+    if (followNetwork) {
+        wifiSignalScheduleIfStale();
+    }
 
     // 连着 Wi-Fi **并且真的读到了 RSSI** 才切过去。
     //
@@ -1294,6 +1328,13 @@ extern "C" NSString* HeliumSignalSource(void)
 {
     if (gWiFiAssociated && gWiFiRssiDbm < 0) {
         return [NSString stringWithFormat:@"wifi:%d", gWiFiRssiDbm];
+    }
+    // 连着 Wi-Fi 但读不到 RSSI：把断在哪一步一起报上去。
+    //
+    // 这一条是整个诊断的关键：`dlopen` 失败、符号改名、wifid 拒绝连接，在界面上
+    // 看起来都是「数字一直不变」，只有这个串能区分。
+    if (gWiFiAssociated) {
+        return [NSString stringWithFormat:@"wifi-failed:%s", helium_wifi_diagnosis()];
     }
     if (gSignalSlot >= 0 && gSignalRSRPDbm < 0) {
         return [NSString stringWithFormat:@"cellular:%d", gSignalRSRPDbm];
@@ -1494,7 +1535,9 @@ void formatParsedInfo(NSDictionary *parsedInfo, NSInteger parsedID, NSMutableAtt
             widgetString = formattedCellularSignal(
                 [parsedInfo valueForKey:@"signalSlot"] ? [[parsedInfo valueForKey:@"signalSlot"] intValue] : 0,
                 [parsedInfo valueForKey:@"showUnit"] ? [[parsedInfo valueForKey:@"showUnit"] boolValue] : YES,
-                [parsedInfo valueForKey:@"followNetwork"] ? [[parsedInfo valueForKey:@"followNetwork"] boolValue] : YES
+                // **默认关**：MobileWiFi 那条路没在真机验证过，默认开启等于把未验证的
+                // 私有框架调用塞进每个人的 HUD。用户显式打开才走。
+                [parsedInfo valueForKey:@"followNetwork"] ? [[parsedInfo valueForKey:@"followNetwork"] boolValue] : NO
             );
             break;
         default:
