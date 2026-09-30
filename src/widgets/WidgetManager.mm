@@ -1239,6 +1239,13 @@ static void cellularSignalScheduleIfStale(int32_t slot, BOOL followNetwork)
     });
 }
 
+/// dBm 转成要显示的字符串。Wi-Fi 与蜂窝共用 —— 两边的数值形态完全一样。
+static NSString* signalNumber(int32_t dbm, BOOL showUnit)
+{
+    NSString *number = [NSString stringWithFormat:@"%d", dbm];
+    return showUnit ? [number stringByAppendingString:@" dBm"] : number;
+}
+
 /// `slot`: 0 follows the SIM the system is using for data, 1/2 pick explicitly.
 /// `followNetwork`: 连着 Wi-Fi 且读到 RSSI 时改用 Wi-Fi 的数值。
 static NSString* formattedCellularSignal(int32_t slot, BOOL showUnit, BOOL followNetwork)
@@ -1261,12 +1268,6 @@ static NSString* formattedCellularSignal(int32_t slot, BOOL showUnit, BOOL follo
         return @"--";
     }
     return signalNumber(value, showUnit);
-}
-
-static NSString* signalNumber(int32_t dbm, BOOL showUnit)
-{
-    NSString *number = [NSString stringWithFormat:@"%d", dbm];
-    return showUnit ? [number stringByAppendingString:@" dBm"] : number;
 }
 
 /// State of the last probe, for the widget's preferences screen.
