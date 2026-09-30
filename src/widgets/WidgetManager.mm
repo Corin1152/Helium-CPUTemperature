@@ -1174,10 +1174,9 @@ static NSString* formattedCPUFrequency(NSInteger unit)
 // dBm; 0 means "no reading yet". RSRP is always negative, so 0 is a safe
 // sentinel and needs no separate flag.
 static int32_t gSignalRSRPDbm = 0;
-// Wi-Fi 那一侧的同一套东西。与蜂窝共用缓存时间戳，因为两者是一起采的。
+// Wi-Fi 那一侧。
 static int32_t gWiFiRssiDbm = 0;
 static BOOL gWiFiAssociated = NO;
-// Wi-Fi 那一侧自己的节拍 —— 与蜂窝分开，见 wifiSignalScheduleIfStale。
 static CFAbsoluteTime gWiFiStamp = 0;
 static BOOL gWiFiSampling = NO;
 // The slot the cached value came from. A widget configured for a different slot
@@ -1229,9 +1228,8 @@ static void cellularSignalScheduleIfStale(int32_t slot)
 
 /// Wi-Fi 采样**单独一条队列**。
 ///
-/// 第一版把它和蜂窝放在同一条队列上，结果那条链一旦出问题就把两边一起拖住 ——
-/// 而 Helium 的部件都由同一个进程绘制，表现就是「所有部件一起不显示」。
-/// 分开之后，即使 Wi-Fi 那边卡死，蜂窝的采样照常，其他部件也不受影响。
+/// 与蜂窝分开：那边是 `CommCenter` 的 XPC，这边是 `wifid`，两条链互不相干。
+/// 分开之后即使 Wi-Fi 那边卡住，蜂窝的采样照常，其他部件也不受影响。
 static dispatch_queue_t wifiSignalQueue(void)
 {
     static dispatch_once_t once;
@@ -1269,7 +1267,7 @@ static void wifiSignalScheduleIfStale(void)
     });
 }
 
-/// dBm 转成要显示的字符串。Wi-Fi 与蜂窝共用 —— 两边的数值形态完全一样。
+/// dBm 转成要显示的字符串。
 static NSString* signalNumber(int32_t dbm, BOOL showUnit)
 {
     NSString *number = [NSString stringWithFormat:@"%d", dbm];
@@ -1280,7 +1278,6 @@ static NSString* signalNumber(int32_t dbm, BOOL showUnit)
 /// `followNetwork`: 连着 Wi-Fi 且读到 RSSI 时改用 Wi-Fi 的数值。
 static NSString* formattedCellularSignal(int32_t slot, BOOL showUnit, BOOL followNetwork)
 {
-    // 蜂窝照常采 —— 它是这个部件的基础，也是「有没有 CommCenter 权限」的依据。
     cellularSignalScheduleIfStale(slot);
     if (followNetwork) {
         wifiSignalScheduleIfStale();
@@ -1289,7 +1286,7 @@ static NSString* formattedCellularSignal(int32_t slot, BOOL showUnit, BOOL follo
     // 连着 Wi-Fi **并且真的读到了 RSSI** 才切过去。
     //
     // 「关联了但读不到 RSSI」时不切换：那样会明明在 Wi-Fi 上却显示蜂窝数值。
-    // 同时它也意味着 MobileWiFi 这条路走不通 —— 静默地退化成原来的蜂窝小部件，
+    // 同时它也意味着 MobileWiFi 这条路走不通 —— 静默退化成原来的蜂窝小部件，
     // 比一直显示 `--` 有用。
     if (followNetwork && gWiFiAssociated && gWiFiRssiDbm < 0) {
         return signalNumber(gWiFiRssiDbm, showUnit);
@@ -1319,20 +1316,16 @@ extern "C" NSString* HeliumCellularSignalStatus(void)
 
 /// 当前这一格显示的是哪一路信号，给设置页的状态行用。
 ///
-/// 返回 `"wifi:<dBm>"` / `"cellular:<dBm>"` / `"unavailable"`。
+/// 返回 `"wifi:<dBm>"` / `"wifi-failed:<原因>"` / `"cellular:<dBm>"` / `"unavailable"`。
 ///
 /// **这一行是必要的，不是装饰**：Wi-Fi 与蜂窝的读数范围重叠（都在 -40…-100 之间），
 /// 光看数字分不出是哪一路；而 MobileWiFi 那条路一旦读不到，这个部件会**静默地**
-/// 退回蜂窝 —— 用户看到的是「信号一直不变」，看不出是 Wi-Fi 那条路没通。
+/// 退回蜂窝 —— 用户看到的是「信号一直不变」，看不出原因。
 extern "C" NSString* HeliumSignalSource(void)
 {
     if (gWiFiAssociated && gWiFiRssiDbm < 0) {
         return [NSString stringWithFormat:@"wifi:%d", gWiFiRssiDbm];
     }
-    // 连着 Wi-Fi 但读不到 RSSI：把断在哪一步一起报上去。
-    //
-    // 这一条是整个诊断的关键：`dlopen` 失败、符号改名、wifid 拒绝连接，在界面上
-    // 看起来都是「数字一直不变」，只有这个串能区分。
     if (gWiFiAssociated) {
         return [NSString stringWithFormat:@"wifi-failed:%s", helium_wifi_diagnosis()];
     }
@@ -1535,8 +1528,7 @@ void formatParsedInfo(NSDictionary *parsedInfo, NSInteger parsedID, NSMutableAtt
             widgetString = formattedCellularSignal(
                 [parsedInfo valueForKey:@"signalSlot"] ? [[parsedInfo valueForKey:@"signalSlot"] intValue] : 0,
                 [parsedInfo valueForKey:@"showUnit"] ? [[parsedInfo valueForKey:@"showUnit"] boolValue] : YES,
-                // **默认关**：MobileWiFi 那条路没在真机验证过，默认开启等于把未验证的
-                // 私有框架调用塞进每个人的 HUD。用户显式打开才走。
+                // **默认关**：这条私有路还没在真机验证过，默认开启等于把它塞进每个人的 HUD。
                 [parsedInfo valueForKey:@"followNetwork"] ? [[parsedInfo valueForKey:@"followNetwork"] boolValue] : NO
             );
             break;

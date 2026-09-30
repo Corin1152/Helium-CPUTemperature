@@ -99,11 +99,11 @@
 "Frequency Unit" = "频率单位";
 "Signal" = "信号";
 "Source" = "来源";
-"Wi-Fi connected, RSSI unavailable (%@)" = "已连 Wi-Fi，但读不到 RSSI（%@）";
-"Experimental. Reads Wi-Fi RSSI through a private framework. If the status bar stops updating, turn this off." = "实验功能。通过私有框架读 Wi-Fi RSSI。如果状态栏不再更新，请关掉它。";
 "Show Wi-Fi signal when connected" = "连接 Wi-Fi 时显示 Wi-Fi 信号";
 "Wi-Fi %d dBm" = "Wi-Fi %d dBm";
 "Cellular %d dBm" = "蜂窝 %d dBm";
+"Wi-Fi connected, RSSI unavailable (%@)" = "已连 Wi-Fi，但读不到 RSSI（%@）";
+"Experimental. Reads Wi-Fi RSSI through a private framework. If the status bar stops updating, turn this off." = "实验功能。通过私有框架读 Wi-Fi RSSI。如果状态栏不再更新，请关掉它。";
 "Status" = "状态";
 "SIM Slot" = "SIM 卡槽";
 "Auto" = "自动";

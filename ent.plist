@@ -4,11 +4,15 @@
 <dict>
 	<!--
 	  Wi-Fi 接收功率（RSSI）走 MobileWiFi 私有框架与 wifid 通信。
-	  这条权限是标准的「Access Wi-Fi Information」能力（CPU-X 也带着它）。
-	  不确定 wifid 是否校验它 —— 加了不亏：**读不到 RSSI 时部件会静默退回蜂窝**，
-	  所以失败是可以接受的降级，但能读到就别因为权限被拦。
+	  下面两条是**必须的**，参考 ProcursusTeam/netctl 的 entitlements：
+	    · skip-library-validation —— 加载一个不是本 App 签名的私有框架；
+	    · wifi.manager-access      —— wifid 认这个，没有它 MobileWiFi 拒绝服务。
+	  第一版就是漏了这两条（只加了公开的 networking.wifi-info，那是给
+	  CNCopyCurrentNetworkInfo 用的，跟 MobileWiFi 不是一回事）。
 	-->
-	<key>com.apple.developer.networking.wifi-info</key>
+	<key>com.apple.private.skip-library-validation</key>
+	<true/>
+	<key>com.apple.wifi.manager-access</key>
 	<true/>
 	<key>com.apple.AXMediaUtilitiesService-access</key>
 	<true/>

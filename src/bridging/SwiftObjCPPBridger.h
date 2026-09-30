@@ -23,5 +23,6 @@ NSString* HeliumTemperatureDiagnosticsBridger();
 /// entitlement fails silently — the widget would just show "--" forever.
 NSString* HeliumCellularSignalStatusBridger();
 
-/// 当前显示的是哪一路信号：`"wifi:<dBm>"` / `"cellular:<dBm>"` / `"unavailable"`。
+/// 当前显示的是哪一路信号：`"wifi:<dBm>"` / `"wifi-failed:<原因>"` /
+/// `"cellular:<dBm>"` / `"unavailable"`。
 NSString* HeliumSignalSourceBridger();

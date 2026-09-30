@@ -98,11 +98,11 @@
 "Frequency Unit" = "Frequency Unit";
 "Signal" = "Signal";
 "Source" = "Source";
-"Wi-Fi connected, RSSI unavailable (%@)" = "Wi-Fi connected, RSSI unavailable (%@)";
-"Experimental. Reads Wi-Fi RSSI through a private framework. If the status bar stops updating, turn this off." = "Experimental. Reads Wi-Fi RSSI through a private framework. If the status bar stops updating, turn this off.";
 "Show Wi-Fi signal when connected" = "Show Wi-Fi signal when connected";
 "Wi-Fi %d dBm" = "Wi-Fi %d dBm";
 "Cellular %d dBm" = "Cellular %d dBm";
+"Wi-Fi connected, RSSI unavailable (%@)" = "Wi-Fi connected, RSSI unavailable (%@)";
+"Experimental. Reads Wi-Fi RSSI through a private framework. If the status bar stops updating, turn this off." = "Experimental. Reads Wi-Fi RSSI through a private framework. If the status bar stops updating, turn this off.";
 "Status" = "Status";
 "SIM Slot" = "SIM Slot";
 "Auto" = "Auto";

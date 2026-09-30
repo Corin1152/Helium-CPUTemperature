@@ -26,11 +26,12 @@ struct WidgetPreferencesView: View {
     /// 蜂窝信号探针的状态（"pending" / "ok" / "unavailable"），见 SwiftObjCPPBridger.h。
     @State private var cellularStatus: String = ""
 
-    /// 信号小部件当前显示的是哪一路（"wifi:<dBm>" / "cellular:<dBm>" / "unavailable"）。
+    /// 信号小部件当前显示的是哪一路（"wifi:<dBm>" / "wifi-failed:<原因>" /
+    /// "cellular:<dBm>" / "unavailable"）。
     @State private var signalSource: String = "unavailable"
 
     /// 信号小部件是否跟随网络在 Wi-Fi 与蜂窝之间切换。
-    @State private var followNetwork: Bool = true
+    @State private var followNetwork: Bool = false
 
     /// 状态行的文案。`unavailable` 的说明刻意把「权限」写进去 —— 那是它最常见的原因。
     private var cellularStatusText: String {
@@ -307,7 +308,7 @@ struct WidgetPreferencesView: View {
                             .bold()
                     }
                     .onAppear {
-                        // **默认关**：MobileWiFi 那条路没在真机验证过。默认开启等于把
+                        // **默认关**：这条私有路还没在真机验证过。默认开启等于把
                         // 未验证的私有框架调用塞进每个人的 HUD。
                         followNetwork = widgetID.config["followNetwork"] as? Bool ?? false
                     }
